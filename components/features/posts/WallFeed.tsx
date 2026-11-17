@@ -1,6 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { usePathname } from "next/navigation";
 import Image from "next/image";
 import { Ellipsis, Heart, MessageCircle, RefreshCw, Trash2 } from "lucide-react";
 import { toast } from "sonner";
@@ -60,6 +68,8 @@ export default function WallFeed({
   showComposer = true,
 }: WallFeedProps) {
   const { currentUser } = useAuth();
+  const pathname = usePathname();
+  const channelId = useId().replace(/[^a-zA-Z0-9_-]/g, "");
   const [posts, setPosts] = useState<WallPost[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -83,7 +93,10 @@ export default function WallFeed({
             .map((post) => [post.id, post]),
         );
         for (const post of currentPosts) {
-          if (!deletedPostIds.current.has(post.id)) {
+          if (
+            !deletedPostIds.current.has(post.id) &&
+            !mergedPosts.has(post.id)
+          ) {
             mergedPosts.set(post.id, post);
           }
         }
@@ -99,6 +112,7 @@ export default function WallFeed({
   }, []);
 
   useEffect(() => {
+    // Refresh cached feed state after route changes, such as returning from a profile.
     let isCurrent = true;
     let supabase: ReturnType<typeof getSupabaseClient> | null = null;
     let channel:
@@ -109,7 +123,7 @@ export default function WallFeed({
     try {
       supabase = getSupabaseClient();
       channel = supabase
-        .channel("piecebook-post-wall")
+        .channel(`piecebook-post-wall-${channelId}`)
         .on(
           "postgres_changes",
           { event: "*", schema: "public", table: "post" },
@@ -153,6 +167,7 @@ export default function WallFeed({
       .then((loadedPosts) => {
         if (!isCurrent) return;
         if (realtimeUnavailable) setRealtimeStatus("error");
+        setLoadError(null);
         setPosts((currentPosts) => {
           const mergedPosts = new Map(
             loadedPosts
@@ -160,7 +175,10 @@ export default function WallFeed({
               .map((post) => [post.id, post]),
           );
           for (const post of currentPosts) {
-            if (!deletedPostIds.current.has(post.id)) {
+            if (
+              !deletedPostIds.current.has(post.id) &&
+              !mergedPosts.has(post.id)
+            ) {
               mergedPosts.set(post.id, post);
             }
           }
@@ -182,7 +200,7 @@ export default function WallFeed({
       isCurrent = false;
       if (supabase && channel) void supabase.removeChannel(channel);
     };
-  }, []);
+  }, [channelId, pathname]);
 
   const visiblePosts = useMemo(() => {
     const query = searchTerm.trim().toLocaleLowerCase();
