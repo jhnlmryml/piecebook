@@ -1,38 +1,46 @@
-import type { Metadata } from "next";
-import { Geist, Geist_Mono, JetBrains_Mono, Titillium_Web } from "next/font/google";
+import type { Metadata, Viewport } from "next";
 import "./globals.css";
-import { cn } from "@/lib/utils";
+import { AuthProvider } from "@/context/AuthContext";
 import {TooltipProvider} from "@/components/ui/tooltip";
-
-const jetbrainsMono = JetBrains_Mono({subsets:['latin'],variable:'--font-mono'});
-
-const wordMark = Titillium_Web({
-  variable:"--font-wordmark",
-  subsets: ["latin"],
-  weight: ["700"],
-});
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
+import { ThemeProvider } from "@/components/theme/ThemeProvider";
+import { Toaster as ShadcnToaster } from "@/components/ui/sonner";
 
 export const metadata: Metadata = {
-  title: "Piecebook",
-  description: "2008 Facebook-style Wall for your thoughts, ideas, and memories.",
+  title: {
+    default: "Piecebook — Your Wall",
+    template: "%s | Piecebook",
+  },
+  description:
+    "A place for your friends, photos, and everyday updates — inspired by the original Facebook Wall.",
+  applicationName: "Piecebook",
+  keywords: ["Piecebook", "social wall", "friends", "photos"],
+  openGraph: {
+    title: "Piecebook — Your Wall",
+    description:
+      "A place for your friends, photos, and everyday updates — inspired by the original Facebook Wall.",
+    type: "website",
+  },
 };
 
-export default function RootLayout({ children }: LayoutProps<"/">) {
+export const viewport: Viewport = {
+  themeColor: "#3b5998",
+};
+
+export default function RootLayout({
+  children,
+}: Readonly<{
+  children: React.ReactNode;
+}>) {
   return (
-    <html
-      lang="en"
-      className={cn("h-full", "antialiased", geistSans.variable, geistMono.variable, "font-mono", jetbrainsMono.variable, wordMark.variable)}
-    >
-      <body className="min-h-full flex flex-col"><TooltipProvider>{children}</TooltipProvider></body>
+    <html lang="en" suppressHydrationWarning>
+      <body className="h-dvh overflow-hidden antialiased">
+        <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
+          <AuthProvider>
+            <TooltipProvider>{children}</TooltipProvider>
+            <ShadcnToaster position="top-center" richColors />
+          </AuthProvider>
+        </ThemeProvider>
+      </body>
     </html>
   );
 }
