@@ -2,8 +2,8 @@
 
 import { useSyncExternalStore } from "react";
 import { Monitor, Moon, Sun } from "lucide-react";
-import { useTheme } from "next-themes";
 import { Button } from "@/components/ui/button";
+import { useTabTheme } from "@/components/theme/ThemeProvider";
 
 const themeOptions = [
   { value: "light", label: "Light", Icon: Sun },
@@ -16,7 +16,7 @@ const getClientSnapshot = () => true;
 const getServerSnapshot = () => false;
 
 export function ThemeToggle() {
-  const { setTheme, theme } = useTheme();
+  const { setTheme, theme } = useTabTheme();
   const hasMounted = useSyncExternalStore(
     subscribeToNothing,
     getClientSnapshot,

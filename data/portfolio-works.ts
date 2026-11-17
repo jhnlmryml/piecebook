@@ -24,6 +24,7 @@ export const PORTFOLIO_WORKS = [
   {
     title: "The Hype",
     url: "https://www.thehype.gg/",
+    preview: "static",
     description:
       "A modern interactive website featuring 3D visuals, animations, and content management.",
     stack:
@@ -47,15 +48,16 @@ export const PORTFOLIO_WORKS = [
   {
     title: "Claw Machine",
     url: "https://claw-machine-fawn.vercel.app/",
+    preview: "static",
     description:
       "An interactive claw machine-themed web experience with custom visuals and animations.",
-    stack: "Custom visuals and animations",
+    stack: "React, Node.js, Tailwind CSS, Three.js, React Three Fiber, GSAP,",
   },
   {
     title: "Flipverse",
     url: "https://flipverse-indol.vercel.app/",
     description:
       "A modern landing page with a responsive layout and polished visual presentation.",
-    stack: "Responsive web design",
+    stack: "React, Node.js, Tailwind CSS, Three.js, React Three Fiber, GSAP,",
   },
 ] as const;

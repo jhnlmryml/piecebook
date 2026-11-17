@@ -38,13 +38,17 @@ function DesktopPreview({
       ref={containerRef}
       className="relative aspect-video w-full overflow-hidden bg-white"
     >
+      {/* Keep live previews intact while preventing autoplay in this frame and nested frames. */}
       <iframe
         src={url}
         title={`${title} live preview`}
         loading="lazy"
         tabIndex={-1}
+        inert
+        aria-hidden="true"
         onLoad={onLoad}
         referrerPolicy="strict-origin-when-cross-origin"
+        allow="autoplay 'none'"
         sandbox="allow-forms allow-popups allow-same-origin allow-scripts"
         style={{
           width: "1280px",
@@ -186,12 +190,18 @@ export default function HomePage() {
                       </a>
                     </div>
 
-                    {/* Automatic desktop website preview */}
-                    <DesktopPreview
-                      url={work.url}
-                      title={work.title}
-                      onLoad={restorePortfolioScroll}
-                    />
+                    {"preview" in work && work.preview === "static" ? (
+                      <div className="flex aspect-video w-full flex-col items-center justify-center gap-1 bg-[#111318] text-center text-white">
+                        <p className="text-xs font-semibold">Interactive preview disabled</p>
+                        {/* <p className="text-[10px] text-white/60">Open the project to play</p> */}
+                      </div>
+                    ) : (
+                      <DesktopPreview
+                        url={work.url}
+                        title={work.title}
+                        onLoad={restorePortfolioScroll}
+                      />
+                    )}
 
                   </div>
 

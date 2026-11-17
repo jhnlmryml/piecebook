@@ -2,6 +2,7 @@
 
 import {
   useCallback,
+  useEffect,
   useRef,
   useState,
   type DragEvent,
@@ -66,7 +67,14 @@ export function PostComposer({ onPostCreated }: PostComposerProps) {
   const [isUploading, setIsUploading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isDraggingOver, setIsDraggingOver] = useState(false);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const dragCounter = useRef(0);
+
+  useEffect(() => {
+    if (!isUploading && !isSubmitting) {
+      textareaRef.current?.focus();
+    }
+  }, [isSubmitting, isUploading]);
 
   const removeUnusedImages = useCallback(async (objectPaths: string[]) => {
     if (objectPaths.length === 0) return;
@@ -389,7 +397,9 @@ export function PostComposer({ onPostCreated }: PostComposerProps) {
               Write a wall post
             </label>
             <Textarea
+              ref={textareaRef}
               id="wall-post"
+              autoFocus
               value={message}
               onDragOver={handleDragOver}
               onDrop={handleDrop}
