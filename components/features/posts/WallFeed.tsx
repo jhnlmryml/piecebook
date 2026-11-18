@@ -49,6 +49,7 @@ type WallFeedProps = {
   userOnly?: boolean;
   profileUserId?: string;
   showComposer?: boolean;
+  mobilePageScroll?: boolean;
 };
 
 function sortPosts(posts: WallPost[]) {
@@ -66,6 +67,7 @@ export default function WallFeed({
   userOnly = false,
   profileUserId,
   showComposer = true,
+  mobilePageScroll = false,
 }: WallFeedProps) {
   const { currentUser } = useAuth();
   const pathname = usePathname();
@@ -286,7 +288,12 @@ export default function WallFeed({
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-3 sm:gap-4" id="wall">
+    <div
+      className={`flex flex-col gap-3 sm:gap-4 ${
+        mobilePageScroll ? "flex-none md:min-h-0 md:flex-1" : "min-h-0 flex-1"
+      }`}
+      id="wall"
+    >
       {showComposer && <PostComposer onPostCreated={addPost} />}
 
       <div className="piecebook-divider flex shrink-0 items-center justify-between border-b pb-2">
@@ -332,7 +339,13 @@ export default function WallFeed({
         </p>
       )}
 
-      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain scrollbar-hide">
+      <div
+        className={
+          mobilePageScroll
+            ? "flex-none overflow-visible md:min-h-0 md:flex-1 md:overflow-y-auto md:overscroll-contain md:scrollbar-hide"
+            : "min-h-0 flex-1 overflow-y-auto overscroll-contain scrollbar-hide"
+        }
+      >
         {isViewLoading ? (
           <div className="space-y-3" aria-label="Loading wall posts">
             <WallPostSkeleton />
