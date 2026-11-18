@@ -192,7 +192,7 @@ export default function HomePage() {
 
                     {"preview" in work && work.preview === "static" ? (
                       <div className="flex aspect-video w-full flex-col items-center justify-center gap-1 bg-[#111318] text-center text-white">
-                        <p className="text-xs font-semibold">Interactive preview disabled</p>
+                        <p className="text-xs font-semibold">Preview disabled</p>
                         {/* <p className="text-[10px] text-white/60">Open the project to play</p> */}
                       </div>
                     ) : (
