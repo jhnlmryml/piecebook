@@ -4,6 +4,7 @@ import { AuthProvider } from "@/context/AuthContext";
 import {TooltipProvider} from "@/components/ui/tooltip";
 import { ThemeProvider } from "@/components/theme/ThemeProvider";
 import { Toaster as ShadcnToaster } from "@/components/ui/sonner";
+import AppShell from "@/components/layout/AppShell";
 
 export const metadata: Metadata = {
   title: {
@@ -36,8 +37,10 @@ export default function RootLayout({
       <body className="h-dvh overflow-hidden antialiased">
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
           <AuthProvider>
-            <TooltipProvider>{children}</TooltipProvider>
-            <ShadcnToaster position="top-center" richColors />
+            <TooltipProvider>
+              <AppShell>{children}</AppShell>
+              <ShadcnToaster position="top-center" richColors />
+            </TooltipProvider>
           </AuthProvider>
         </ThemeProvider>
       </body>

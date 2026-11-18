@@ -4,7 +4,6 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { USERS } from "@/data/demo-users";
-import AppHeader from "@/components/layout/AppHeader";
 import {
   Avatar,
   AvatarFallback,
@@ -30,7 +29,6 @@ export default function FriendsPage() {
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
-      <AppHeader />
       <main className="mx-auto min-h-0 w-full max-w-5xl flex-1 overflow-y-auto px-3 py-5 scrollbar-hide sm:px-5 sm:py-8">
         <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
           <div>

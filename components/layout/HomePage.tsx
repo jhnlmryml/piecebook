@@ -4,7 +4,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { ExternalLink } from "lucide-react";
 import { PORTFOLIO_WORKS } from "@/data/portfolio-works";
-import AppHeader from "@/components/layout/AppHeader";
+import { useAppShellSearch } from "@/components/layout/AppShell";
 import ProfileCard from "@/components/features/profile/ProfileCard";
 import WallFeed from "@/components/features/posts/WallFeed";
 
@@ -64,7 +64,7 @@ function DesktopPreview({
 }
 
 export default function HomePage() {
-  const [searchTerm, setSearchTerm] = useState("");
+  const { wallSearchTerm: searchTerm } = useAppShellSearch();
 
   const portfolioScrollRef = useRef<HTMLDivElement>(null);
   const savedScrollTop = useRef(0);
@@ -107,11 +107,6 @@ export default function HomePage() {
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
-      <AppHeader
-        searchTerm={searchTerm}
-        onSearchTermChange={setSearchTerm}
-      />
-
       <main className="mx-auto grid min-h-0 w-full max-w-6xl flex-1 grid-cols-1 grid-rows-[minmax(0,1fr)] gap-4 overflow-hidden px-3 py-4 sm:px-5 sm:py-6 md:grid-cols-[minmax(210px,0.8fr)_minmax(0,1.8fr)] md:gap-5 xl:grid-cols-[230px_minmax(0,1fr)_260px] xl:gap-6 xl:py-8">
 
         <aside

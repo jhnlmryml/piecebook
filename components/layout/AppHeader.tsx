@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { BadgeQuestionMark, Home, Search, Users } from "lucide-react";
+import { BadgeQuestionMark, CircleUserRoundIcon, Home, Search, ShoppingBag, Users } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import {
@@ -39,8 +39,9 @@ export default function AppHeader({
   const isHomePage = pathname === "/";
   const isProfilePage = pathname === "/profile" || pathname.startsWith("/profile/");
   const isFriendsPage = pathname === "/friends";
+  const isMarketplacePage = pathname === "/marketplace";
 
-  const search = onSearchTermChange ? (
+  const search = isHomePage && onSearchTermChange ? (
     <InputGroup className="h-9 border-0 bg-search-background text-search-foreground">
       <InputGroupInput
         aria-label="Search wall posts"
@@ -102,6 +103,17 @@ export default function AppHeader({
               aria-current={isFriendsPage ? "page" : undefined}
             >
               Friends
+            </Link>
+            <Link
+              className={
+                isMarketplacePage
+                  ? "font-semibold"
+                  : "text-white/75 hover:text-white"
+              }
+              href="/marketplace"
+              aria-current={isMarketplacePage ? "page" : undefined}
+            >
+              Marketplace
             </Link>
             <div className="ml-auto hidden w-56 lg:block">{search}</div>
           </div>
@@ -195,7 +207,7 @@ export default function AppHeader({
         </div>
       )}
 
-      <div className="grid grid-cols-3 border-t border-white/10 md:hidden">
+      <div className="grid grid-cols-4 border-t border-white/10 md:hidden">
         <Link
           className={`flex min-h-10 items-center justify-center gap-2 text-xs ${
             isHomePage ? "font-medium text-white" : "text-white/80"
@@ -204,7 +216,7 @@ export default function AppHeader({
           aria-current={isHomePage ? "page" : undefined}
         >
           <Home aria-hidden="true" className="size-4" />
-          Home
+          
         </Link>
         <Link
           className={`flex min-h-10 items-center justify-center gap-2 text-xs ${
@@ -212,8 +224,8 @@ export default function AppHeader({
           }`}
           href="/profile"
           aria-current={isProfilePage ? "page" : undefined}
-        >
-          Profile
+        ><CircleUserRoundIcon aria-hidden="true" className="size-4" />
+          
         </Link>
         <Link
           className={`flex min-h-10 items-center justify-center gap-2 text-xs ${
@@ -223,7 +235,17 @@ export default function AppHeader({
           aria-current={isFriendsPage ? "page" : undefined}
         >
           <Users aria-hidden="true" className="size-4" />
-          Friends
+         
+        </Link>
+        <Link
+          className={`flex min-h-10 items-center justify-center gap-2 text-xs ${
+            isMarketplacePage ? "font-medium text-white" : "text-white/80"
+          }`}
+          href="/marketplace"
+          aria-current={isMarketplacePage ? "page" : undefined}
+        >
+          <ShoppingBag aria-hidden="true" className="size-4" />
+          
         </Link>
       </div>
     </header>
