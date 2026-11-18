@@ -10,6 +10,7 @@ export const PORTFOLIO_WORKS = [
   {
     title: "Tic-Tac-Toe Game",
     url: "https://jhnlmryml-tic-tac-toe.vercel.app/",
+    preview: "static",
     description:
       "A responsive interactive game featuring computer AI, local multiplayer, character selection, score tracking, and animations.",
     stack: "Next.js, React, Tailwind CSS, Motion, shadcn/ui",
