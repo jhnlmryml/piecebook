@@ -305,6 +305,11 @@ function FileUpload(props: FileUploadProps) {
           const newFileSet = new Set(action.files);
           for (const existingFile of files.keys()) {
             if (!newFileSet.has(existingFile)) {
+              const cachedUrl = urlCache.get(existingFile);
+              if (cachedUrl) {
+                URL.revokeObjectURL(cachedUrl);
+                urlCache.delete(existingFile);
+              }
               files.delete(existingFile);
             }
           }
@@ -714,7 +719,9 @@ function setInputFiles(input: HTMLInputElement, files: File[]) {
 }
 
 interface FileUploadDropzoneProps
-  extends React.ComponentProps<"div">, useRender.ComponentProps<"div"> {}
+  extends React.ComponentProps<"div">, useRender.ComponentProps<"div"> {
+  clickToSelect?: boolean;
+}
 
 function FileUploadDropzone(props: FileUploadDropzoneProps) {
   const {
@@ -727,6 +734,7 @@ function FileUploadDropzone(props: FileUploadDropzoneProps) {
     onDrop: onDropProp,
     onPaste: onPasteProp,
     onKeyDown: onKeyDownProp,
+    clickToSelect = true,
     ...dropzoneProps
   } = props;
 
@@ -756,11 +764,11 @@ function FileUploadDropzone(props: FileUploadDropzoneProps) {
         target instanceof HTMLElement &&
         target.closest('[data-slot="file-upload-trigger"]');
 
-      if (!isFromTrigger) {
+      if (clickToSelect && !isFromTrigger) {
         context.inputRef.current?.click();
       }
     },
-    [context.inputRef, propsRef],
+    [clickToSelect, context.inputRef, propsRef],
   );
 
   const onDragOver = React.useCallback(
@@ -832,9 +840,6 @@ function FileUploadDropzone(props: FileUploadDropzoneProps) {
 
       if (event.defaultPrevented) return;
 
-      event.preventDefault();
-      store.dispatch({ type: "SET_DRAG_OVER", dragOver: false });
-
       const items = event.clipboardData?.items;
       if (!items) return;
 
@@ -851,6 +856,9 @@ function FileUploadDropzone(props: FileUploadDropzoneProps) {
 
       if (files.length === 0) return;
 
+      event.preventDefault();
+      store.dispatch({ type: "SET_DRAG_OVER", dragOver: false });
+
       const inputElement = context.inputRef.current;
       if (!inputElement) return;
 
@@ -865,13 +873,14 @@ function FileUploadDropzone(props: FileUploadDropzoneProps) {
 
       if (
         !event.defaultPrevented &&
+        clickToSelect &&
         (event.key === "Enter" || event.key === " ")
       ) {
         event.preventDefault();
         context.inputRef.current?.click();
       }
     },
-    [context.inputRef, propsRef],
+    [clickToSelect, context.inputRef, propsRef],
   );
 
   return useRender({
@@ -883,7 +892,7 @@ function FileUploadDropzone(props: FileUploadDropzoneProps) {
       "aria-disabled": context.disabled,
       "aria-invalid": invalid,
       dir: context.dir,
-      tabIndex: context.disabled ? undefined : 0,
+      tabIndex: context.disabled || !clickToSelect ? undefined : 0,
       className: cn("relative flex flex-col items-center justify-center gap-2 rounded-none border-2 border-dashed p-4 transition-colors outline-none select-none hover:bg-accent/30 focus-visible:border-ring/50 data-dragging:border-primary/30 data-dragging:bg-accent/30 data-invalid:border-destructive data-invalid:ring-destructive/20 data-disabled:pointer-events-none", className),
       onClick,
       onDragEnter,

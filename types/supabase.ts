@@ -39,7 +39,7 @@ export type Database = {
   }
   public: {
     Tables: {
-      post: {
+      posts: {
         Row: {
           created_at: string
           id: string
@@ -66,7 +66,277 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "post_user_id_fkey"
+            foreignKeyName: "posts_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      post_comments: {
+        Row: {
+          body: string
+          created_at: string
+          id: string
+          image: string[] | null
+          post_id: string
+          user_id: string
+        }
+        Insert: {
+          body: string
+          created_at?: string
+          id?: string
+          image?: string[] | null
+          post_id: string
+          user_id: string
+        }
+        Update: {
+          body?: string
+          created_at?: string
+          id?: string
+          image?: string[] | null
+          post_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "post_comments_post_id_fkey"
+            columns: ["post_id"]
+            isOneToOne: false
+            referencedRelation: "posts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "post_comments_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      marketplace_listing: {
+        Row: {
+          category: string
+          category_details: Json
+          color: string | null
+          condition: string
+          created_at: string
+          description: string
+          id: string
+          location: string
+          material: string | null
+          photos: string[]
+          previous_price: number | null
+          price: number
+          seller_id: string
+          seller_name: string
+          title: string
+        }
+        Insert: {
+          category: string
+          category_details?: Json
+          color?: string | null
+          condition: string
+          created_at?: string
+          description: string
+          id?: string
+          location: string
+          material?: string | null
+          photos?: string[]
+          previous_price?: number | null
+          price: number
+          seller_id: string
+          seller_name: string
+          title: string
+        }
+        Update: {
+          category?: string
+          category_details?: Json
+          color?: string | null
+          condition?: string
+          created_at?: string
+          description?: string
+          id?: string
+          location?: string
+          material?: string | null
+          photos?: string[]
+          previous_price?: number | null
+          price?: number
+          seller_id?: string
+          seller_name?: string
+          title?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "marketplace_listing_seller_id_fkey"
+            columns: ["seller_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      marketplace_listing_comments: {
+        Row: {
+          body: string
+          created_at: string
+          id: string
+          image: string[] | null
+          listing_id: string
+          user_id: string
+        }
+        Insert: {
+          body?: string
+          created_at?: string
+          id?: string
+          image?: string[] | null
+          listing_id: string
+          user_id: string
+        }
+        Update: {
+          body?: string
+          created_at?: string
+          id?: string
+          image?: string[] | null
+          listing_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "marketplace_listing_comments_listing_id_fkey"
+            columns: ["listing_id"]
+            isOneToOne: false
+            referencedRelation: "marketplace_listing"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "marketplace_listing_comments_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      marketplace_listing_likes: {
+        Row: {
+          created_at: string
+          id: string
+          listing_id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          listing_id: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          listing_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "marketplace_listing_likes_listing_id_fkey"
+            columns: ["listing_id"]
+            isOneToOne: false
+            referencedRelation: "marketplace_listing"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "marketplace_listing_likes_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      message: {
+        Row: {
+          body: string
+          created_at: string
+          id: string
+          listing_id: string
+          recipient_id: string
+          sender_id: string
+        }
+        Insert: {
+          body: string
+          created_at?: string
+          id?: string
+          listing_id: string
+          recipient_id: string
+          sender_id: string
+        }
+        Update: {
+          body?: string
+          created_at?: string
+          id?: string
+          listing_id?: string
+          recipient_id?: string
+          sender_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "message_listing_id_fkey"
+            columns: ["listing_id"]
+            isOneToOne: false
+            referencedRelation: "marketplace_listing"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "message_recipient_id_fkey"
+            columns: ["recipient_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "message_sender_id_fkey"
+            columns: ["sender_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      message_reactions: {
+        Row: {
+          created_at: string
+          id: string
+          message_id: string
+          reaction: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          message_id: string
+          reaction: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          message_id?: string
+          reaction?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "message_reactions_message_id_fkey"
+            columns: ["message_id"]
+            isOneToOne: false
+            referencedRelation: "message"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "message_reactions_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: false
             referencedRelation: "users"
@@ -80,9 +350,10 @@ export type Database = {
           birthdate: string | null
           created_at: string
           dream: string | null
-          email: string
+          email: string | null
           full_name: string | null
           id: string
+          image: string | null
           interests: string[] | null
           location: string | null
           role: string | null
@@ -92,9 +363,10 @@ export type Database = {
           birthdate?: string | null
           created_at?: string
           dream?: string | null
-          email: string
+          email?: string | null
           full_name?: string | null
           id?: string
+          image?: string | null
           interests?: string[] | null
           location?: string | null
           role?: string | null
@@ -104,9 +376,10 @@ export type Database = {
           birthdate?: string | null
           created_at?: string
           dream?: string | null
-          email?: string
+          email?: string | null
           full_name?: string | null
           id?: string
+          image?: string | null
           interests?: string[] | null
           location?: string | null
           role?: string | null

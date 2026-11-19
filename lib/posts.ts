@@ -1,7 +1,7 @@
 import type { Tables, TablesInsert } from "@/types/supabase";
 import { getSupabaseClient } from "@/lib/supabase";
 
-export type WallPost = Tables<"post">;
+export type WallPost = Tables<"posts">;
 export const POST_IMAGE_BUCKET = "post-images";
 export const WALL_POST_LIMIT = 50;
 
@@ -33,7 +33,7 @@ function getOwnedPostImagePath(
 
 export async function getWallPosts(): Promise<WallPost[]> {
   const { data, error } = await getSupabaseClient()
-    .from("post")
+    .from("posts")
     .select("*")
     .order("created_at", { ascending: false })
     .limit(WALL_POST_LIMIT);
@@ -43,10 +43,10 @@ export async function getWallPosts(): Promise<WallPost[]> {
 }
 
 export async function createWallPost(
-  post: TablesInsert<"post">,
+  post: TablesInsert<"posts">,
 ): Promise<WallPost> {
   const { data, error } = await getSupabaseClient()
-    .from("post")
+    .from("posts")
     .insert(post)
     .select()
     .single();
@@ -65,7 +65,7 @@ export async function togglePostLike(
     : [...(currentLikes ?? []), userId];
 
   const { data, error } = await getSupabaseClient()
-    .from("post")
+    .from("posts")
     .update({ likes_by: nextLikes })
     .eq("id", postId)
     .select("id")
@@ -78,17 +78,17 @@ export async function togglePostLike(
 
 export async function deleteWallPost(
   postId: string,
-  userId: string,
+  profileId: string,
 ): Promise<void> {
   const supabase = getSupabaseClient();
   const imageBucket = supabase.storage.from(POST_IMAGE_BUCKET);
   const bucketPublicUrl = imageBucket.getPublicUrl("").data.publicUrl;
 
   const { data: post, error: loadError } = await supabase
-    .from("post")
+    .from("posts")
     .select("id, image")
     .eq("id", postId)
-    .eq("user_id", userId)
+    .eq("user_id", profileId)
     .single();
 
   if (loadError) {
@@ -100,7 +100,7 @@ export async function deleteWallPost(
     new Set(
       (post.image ?? [])
         .map((imageUrl) =>
-          getOwnedPostImagePath(imageUrl, userId, bucketPublicUrl),
+          getOwnedPostImagePath(imageUrl, profileId, bucketPublicUrl),
         )
         .filter((path): path is string => path !== null),
     ),
@@ -114,10 +114,10 @@ export async function deleteWallPost(
   }
 
   const { data: deletedPost, error: deleteError } = await supabase
-    .from("post")
+    .from("posts")
     .delete()
     .eq("id", postId)
-    .eq("user_id", userId)
+    .eq("user_id", profileId)
     .select("id")
     .single();
 

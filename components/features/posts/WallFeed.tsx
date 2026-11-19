@@ -3,7 +3,6 @@
 import {
   useCallback,
   useEffect,
-  useId,
   useMemo,
   useRef,
   useState,
@@ -15,8 +14,9 @@ import { toast } from "sonner";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { PostComposer } from "@/components/features/posts/PostComposer";
-import { useAuth } from "@/context/AuthContext";
-import { USERS } from "@/data/demo-users";
+import { PostComments } from "@/components/features/posts/PostComments";
+import { LocalDateTime } from "@/components/shared/LocalDateTime";
+import { useProfile } from "@/context/ProfileContext";
 import {
   getWallPosts,
   deleteWallPost,
@@ -26,7 +26,7 @@ import {
 } from "@/lib/posts";
 import { getInitials } from "@/lib/get-initials";
 import { WallPostSkeleton } from "@/components/shared/LoadingSkeletons";
-import { getSupabaseClient } from "@/lib/supabase";
+import { subscribeToRealtimeChanges } from "@/lib/realtime-events";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -69,15 +69,11 @@ export default function WallFeed({
   showComposer = true,
   mobilePageScroll = false,
 }: WallFeedProps) {
-  const { currentUser } = useAuth();
+  const { currentUser, allUsers, realtimeStatus } = useProfile();
   const pathname = usePathname();
-  const channelId = useId().replace(/[^a-zA-Z0-9_-]/g, "");
   const [posts, setPosts] = useState<WallPost[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [realtimeStatus, setRealtimeStatus] = useState<
-    "connecting" | "connected" | "error"
-  >("connecting");
   const [likingPostIds, setLikingPostIds] = useState<string[]>([]);
   const [postToDelete, setPostToDelete] = useState<WallPost | null>(null);
   const [isDeletingPost, setIsDeletingPost] = useState(false);
@@ -116,59 +112,32 @@ export default function WallFeed({
   useEffect(() => {
     // Refresh cached feed state after route changes, such as returning from a profile.
     let isCurrent = true;
-    let supabase: ReturnType<typeof getSupabaseClient> | null = null;
-    let channel:
-      | ReturnType<ReturnType<typeof getSupabaseClient>["channel"]>
-      | null = null;
-    let realtimeUnavailable = false;
+    const unsubscribe = subscribeToRealtimeChanges((change) => {
+      if (change.table !== "posts") return;
+      if (change.eventType === "DELETE") {
+        const deletedId = String(change.oldRecord.id ?? "");
+        if (!deletedId) return;
+        deletedPostIds.current.add(deletedId);
+        setPosts((currentPosts) =>
+          currentPosts.filter((post) => post.id !== deletedId),
+        );
+        return;
+      }
 
-    try {
-      supabase = getSupabaseClient();
-      channel = supabase
-        .channel(`piecebook-post-wall-${channelId}`)
-        .on(
-          "postgres_changes",
-          { event: "*", schema: "public", table: "post" },
-          (payload) => {
-            if (payload.eventType === "DELETE") {
-              const deletedId = payload.old.id;
-              deletedPostIds.current.add(deletedId);
-              setPosts((currentPosts) =>
-                currentPosts.filter((post) => post.id !== deletedId),
-              );
-              return;
-            }
-
-            const changedPost = payload.new as WallPost;
-            deletedPostIds.current.delete(changedPost.id);
-            setPosts((currentPosts) =>
-              sortPosts([
-                changedPost,
-                ...currentPosts.filter((post) => post.id !== changedPost.id),
-              ]),
-            );
-          },
-        )
-        .subscribe((status) => {
-          if (!isCurrent) return;
-          setRealtimeStatus(
-            status === "SUBSCRIBED"
-              ? "connected"
-              : status === "CHANNEL_ERROR" ||
-                  status === "TIMED_OUT" ||
-                  status === "CLOSED"
-                ? "error"
-                : "connecting",
-          );
-        });
-    } catch {
-      realtimeUnavailable = true;
-    }
+      const changedPost = change.newRecord as unknown as WallPost;
+      if (!changedPost.id) return;
+      deletedPostIds.current.delete(changedPost.id);
+      setPosts((currentPosts) =>
+        sortPosts([
+          changedPost,
+          ...currentPosts.filter((post) => post.id !== changedPost.id),
+        ]),
+      );
+    });
 
     getWallPosts()
       .then((loadedPosts) => {
         if (!isCurrent) return;
-        if (realtimeUnavailable) setRealtimeStatus("error");
         setLoadError(null);
         setPosts((currentPosts) => {
           const mergedPosts = new Map(
@@ -189,7 +158,6 @@ export default function WallFeed({
       })
       .catch((error: unknown) => {
         if (!isCurrent) return;
-        setRealtimeStatus("error");
         setLoadError(
           error instanceof Error ? error.message : "Could not load wall posts.",
         );
@@ -200,9 +168,9 @@ export default function WallFeed({
 
     return () => {
       isCurrent = false;
-      if (supabase && channel) void supabase.removeChannel(channel);
+      unsubscribe();
     };
-  }, [channelId, pathname]);
+  }, [pathname]);
 
   const visiblePosts = useMemo(() => {
     const query = searchTerm.trim().toLocaleLowerCase();
@@ -213,21 +181,21 @@ export default function WallFeed({
     if (!query) return scopedPosts;
 
     return scopedPosts.filter((post) => {
-      const author = USERS.find((user) => user.id === post.user_id);
+      const author = allUsers.find((user) => user.id === post.user_id);
       return (
         post.post?.toLocaleLowerCase().includes(query) ||
         author?.full_name.toLocaleLowerCase().includes(query)
       );
     });
-  }, [currentUser?.id, posts, profileUserId, searchTerm, userOnly]);
+  }, [allUsers, currentUser?.id, posts, profileUserId, searchTerm, userOnly]);
 
   const targetUserId = profileUserId ?? currentUser?.id;
-  const targetUserName = USERS.find((user) => user.id === targetUserId)?.full_name;
+  const targetUserName = allUsers.find((user) => user.id === targetUserId)?.full_name;
   const isOwnProfile = targetUserId === currentUser?.id;
   const postsHeading = isOwnProfile
     ? "Your posts"
     : `${targetUserName ?? "Profile"}'s posts`;
-  const isViewLoading = isLoading || (userOnly && !targetUserId);
+  const isViewLoading = isLoading || (userOnly && !targetUserId && allUsers.length > 0);
 
   const addPost = useCallback((post: WallPost) => {
     setPosts((currentPosts) =>
@@ -378,25 +346,29 @@ export default function WallFeed({
               {searchTerm.trim()
                 ? "No posts match your search."
                 : userOnly
-                  ? isOwnProfile
-                    ? "You haven't posted yet."
-                    : `${targetUserName ?? "This user"} hasn't posted yet.`
+                  ? !targetUserId
+                    ? "No profile is available."
+                    : isOwnProfile
+                      ? "You haven't posted yet."
+                      : `${targetUserName ?? "This user"} hasn't posted yet.`
                   : "Your wall is quiet."}
             </p>
             <p className="piecebook-muted-text mt-1 text-xs">
               {searchTerm.trim()
                 ? "Try another name or keyword."
                 : userOnly
-                  ? isOwnProfile
-                    ? "Your posts will appear here when you share them."
-                    : `${targetUserName ?? "This user"}'s posts will appear here when they share them.`
+                  ? !targetUserId
+                    ? "Add a profile to public.users in Supabase to view profile posts."
+                    : isOwnProfile
+                      ? "Your posts will appear here when you share them."
+                      : `${targetUserName ?? "This user"}'s posts will appear here when they share them.`
                   : "Share a thought to start the conversation."}
             </p>
           </div>
         ) : (
           <div className="space-y-3 pb-1">
             {visiblePosts.map((post) => {
-              const author = USERS.find((user) => user.id === post.user_id);
+              const author = allUsers.find((user) => user.id === post.user_id);
               const isLiked = Boolean(
                 currentUser && post.likes_by?.includes(currentUser.id),
               );
@@ -412,7 +384,7 @@ export default function WallFeed({
                       <div className="flex items-start justify-between gap-2">
                         <div className="flex gap-4 items-center">
                           <Avatar className="size-10 shrink-0 ">
-                          {author && (
+                          {author?.image && (
                             <AvatarImage src={author.image} alt={author.full_name} />
                           )}
                           <AvatarFallback className="piecebook-avatar-fallback">
@@ -423,15 +395,10 @@ export default function WallFeed({
                           <h3 className="piecebook-brand-text text-sm font-bold">
                             {author?.full_name ?? "Piecebook member"}
                           </h3>
-                          <time
+                          <LocalDateTime
                             className="piecebook-muted-text mt-0.5 block text-xs"
                             dateTime={post.created_at}
-                          >
-                            {new Intl.DateTimeFormat(undefined, {
-                              dateStyle: "medium",
-                              timeStyle: "short",
-                            }).format(new Date(post.created_at))}
-                          </time>
+                          />
                         </div>
                         </div>
 
@@ -485,7 +452,7 @@ export default function WallFeed({
                           />
                         </div>
                       ))}
-                      <div className="piecebook-divider mt-4 flex items-center gap-2 border-t pt-2">
+                      <div className="piecebook-divider mt-4 flex flex-wrap items-start gap-2 border-t pt-2">
                         <Button
                           type="button"
                           variant="ghost"
@@ -493,16 +460,17 @@ export default function WallFeed({
                           disabled={!currentUser || likingPostIds.includes(post.id)}
                           aria-pressed={isLiked}
                           onClick={() => void handleLike(post)}
-                          className={`h-8 rounded-sm px-2 text-xs ${isLiked ? "piecebook-brand-text" : "piecebook-muted-text"}`}
+                          className={`h-8 rounded-sm px-2 text-xs cursor-pointer ${isLiked ? "piecebook-brand-text" : "piecebook-muted-text"}`}
                         >
                           <Heart
                             aria-hidden="true"
-                            className={`size-4 ${isLiked ? "fill-current" : ""}`}
+                            className={`size-4 ${isLiked ? "fill-rose-500 text-rose-500" : ""}`}
                           />
                           Like
                           {(post.likes_by?.length ?? 0) > 0 &&
                             ` · ${post.likes_by?.length}`}
                         </Button>
+                        <PostComments postId={post.id} />
                       </div>
                     </div>
                   </div>

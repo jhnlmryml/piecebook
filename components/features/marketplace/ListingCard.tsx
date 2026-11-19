@@ -6,6 +6,7 @@ import { Bookmark, ImageOff } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { useProfile } from "@/context/ProfileContext";
 import { formatPrice, isOwnMarketplaceListing, type Listing } from "./marketplace-data";
 
 const passthroughImageLoader = ({ src }: { src: string }) => src;
@@ -18,8 +19,9 @@ type ListingCardProps = {
 
 export function ListingCard({ listing, isSaved, onSave }: ListingCardProps) {
   const [imageUnavailable, setImageUnavailable] = useState(false);
+  const { currentUser, isLoading } = useProfile();
   const listingHref = `/marketplace/${encodeURIComponent(listing.id)}`;
-  const isOwnListing = isOwnMarketplaceListing(listing);
+  const canSaveListing = !isLoading && Boolean(currentUser) && !isOwnMarketplaceListing(listing, currentUser?.id);
 
   return (
     <article className="group relative min-w-0">
@@ -52,7 +54,7 @@ export function ListingCard({ listing, isSaved, onSave }: ListingCardProps) {
           <p className="truncate text-xs text-muted-foreground">{listing.category}</p>
         </CardContent>
       </Card>
-      {!isOwnListing && (
+      {canSaveListing && (
         <Button
           type="button"
           variant="ghost"

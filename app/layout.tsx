@@ -1,6 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
-import { AuthProvider } from "@/context/AuthContext";
+import { ProfileProvider } from "@/context/ProfileContext";
 import {TooltipProvider} from "@/components/ui/tooltip";
 import { ThemeProvider } from "@/components/theme/ThemeProvider";
 import { Toaster as ShadcnToaster } from "@/components/ui/sonner";
@@ -36,12 +36,12 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning>
       <body className="h-dvh overflow-hidden antialiased">
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
-          <AuthProvider>
+          <ProfileProvider>
             <TooltipProvider>
               <AppShell>{children}</AppShell>
               <ShadcnToaster position="top-center" richColors />
             </TooltipProvider>
-          </AuthProvider>
+          </ProfileProvider>
         </ThemeProvider>
       </body>
     </html>

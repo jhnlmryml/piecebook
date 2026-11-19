@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { BadgeQuestionMark, CircleUserRoundIcon, Home, Search, ShoppingBag, Users } from "lucide-react";
+import { BadgeQuestionMark, CircleUserRoundIcon, Home, Loader2, Search, ShoppingBag, Users } from "lucide-react";
+import { toast } from "sonner";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import {
@@ -21,7 +22,7 @@ import {
 import { Item, ItemContent, ItemMedia, ItemTitle } from "@/components/ui/item";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { ThemeToggle } from "@/components/theme/ThemeToggle";
-import { useAuth } from "@/context/AuthContext";
+import { useProfile } from "@/context/ProfileContext";
 import { getInitials } from "@/lib/get-initials";
 import { HeaderUserSkeleton } from "@/components/shared/LoadingSkeletons";
 
@@ -34,7 +35,7 @@ export default function AppHeader({
   searchTerm,
   onSearchTermChange,
 }: AppHeaderProps) {
-  const { currentUser, isLoading, allUsers, switchUser } = useAuth();
+  const { currentUser, profileError, isLoading, isSwitching, allUsers, switchProfile } = useProfile();
   const pathname = usePathname();
   const isHomePage = pathname === "/";
   const isProfilePage = pathname === "/profile" || pathname.startsWith("/profile/");
@@ -121,14 +122,18 @@ export default function AppHeader({
 
         <div className="ml-auto flex items-center justify-between gap-4 md:ml-0">
           <ThemeToggle />
-          {isLoading || !currentUser ? (
+          {isLoading ? (
             <div className="rounded-sm px-2 py-1">
               <HeaderUserSkeleton />
             </div>
+          ) : allUsers.length === 0 ? (
+            <span className="piecebook-muted-text max-w-40 text-right text-xs" title={profileError ?? undefined}>
+              {profileError ?? "No profiles available"}
+            </span>
           ) : (
             <>
               <span className="hidden truncate text-sm font-medium sm:block">
-                {currentUser.full_name}
+                {currentUser?.full_name ?? "Choose a profile"}
               </span>
               <DropdownMenu>
                 <DropdownMenuTrigger
@@ -138,15 +143,19 @@ export default function AppHeader({
                       variant="ghost"
                       size="icon"
                       className="rounded-full"
-                      aria-label={`Current profile: ${currentUser.full_name}. Switch profile`}
+                      aria-label={currentUser
+                        ? `Current profile: ${currentUser.full_name}. Switch profile`
+                        : "Choose profile"}
                     >
                       <Avatar className="size-8">
-                        <AvatarImage
-                          src={currentUser.image}
-                          alt={currentUser.full_name}
-                        />
+                          {currentUser?.image && (
+                            <AvatarImage
+                              src={currentUser.image}
+                              alt={currentUser.full_name}
+                            />
+                          )}
                         <AvatarFallback className="piecebook-avatar-fallback">
-                          {getInitials(currentUser.full_name)}
+                          {currentUser ? getInitials(currentUser.full_name) : "?"}
                         </AvatarFallback>
                       </Avatar>
                     </Button>
@@ -161,25 +170,39 @@ export default function AppHeader({
                       <Tooltip>
                         <TooltipTrigger className="flex w-full items-center gap-2">
                           <BadgeQuestionMark aria-hidden="true" className="size-4" />
-                          Switch demo profile
+                          Switch profile
                         </TooltipTrigger>
                         <TooltipContent>
                           <p>Switch profiles to see realtime wall updates.</p>
                         </TooltipContent>
                       </Tooltip>
                     </DropdownMenuLabel>
-                    {allUsers
-                      .filter((user) => user.id !== currentUser.id)
+                    {!currentUser && (
+                      <p role="status" className="piecebook-muted-text px-2 pb-2 text-xs">
+                        {profileError ?? "Choose a profile to continue."}
+                      </p>
+                    )}
+                    {allUsers.length === 0 ? (
+                      <p className="piecebook-muted-text px-2 py-3 text-xs">
+                        No profiles are available yet.
+                      </p>
+                    ) : allUsers
+                      .filter((user) => user.id !== currentUser?.id)
                       .map((user) => (
                         <DropdownMenuItem
                           key={user.id}
-                          onClick={() => switchUser(user.id)}
+                          disabled={isSwitching}
+                          onClick={() => {
+                            void switchProfile(user.id).catch((error: unknown) => {
+                              toast.error(error instanceof Error ? error.message : "Could not switch accounts.");
+                            });
+                          }}
                           className="cursor-pointer rounded-sm p-0"
                         >
                           <Item className="w-full gap-3 border-0 px-2 py-2">
                             <ItemMedia variant="image">
                               <Avatar className="size-8">
-                                <AvatarImage src={user.image} alt="" />
+                                {user.image && <AvatarImage src={user.image} alt="" />}
                                 <AvatarFallback className="piecebook-avatar-fallback">
                                   {getInitials(user.full_name)}
                                 </AvatarFallback>
@@ -190,6 +213,7 @@ export default function AppHeader({
                                 {user.full_name}
                               </ItemTitle>
                             </ItemContent>
+                            {isSwitching && <Loader2 aria-hidden="true" className="size-4 animate-spin text-muted-foreground" />}
                           </Item>
                         </DropdownMenuItem>
                       ))}

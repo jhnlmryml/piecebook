@@ -48,7 +48,7 @@ function DesktopPreview({
         aria-hidden="true"
         onLoad={onLoad}
         referrerPolicy="strict-origin-when-cross-origin"
-        allow="autoplay 'none'"
+        allow="autoplay 'none'; focus-without-user-activation 'none'"
         sandbox="allow-forms allow-popups allow-same-origin allow-scripts"
         style={{
           width: "1280px",

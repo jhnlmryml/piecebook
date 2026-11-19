@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useSyncExternalStore, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type FormEvent } from "react";
 import Image from "next/image";
 import {
   ArrowLeft,
@@ -30,26 +30,30 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { useAuth } from "@/context/AuthContext";
+import { useProfile } from "@/context/ProfileContext";
 import { ListingCard } from "./ListingCard";
 import { ListingDetailsView } from "./ListingDetailsView";
 import { useMarketplaceLayout } from "./MarketplaceLayoutContext";
 import { MarketplaceSearchFilters } from "./MarketplaceSearchFilters";
 import {
   categoryDetailFields,
+  createMarketplaceListing,
   formatPrice,
-  getServerUserListingsSnapshot,
-  getUserListingsSnapshot,
-  initialListings,
+  getMarketplaceListingsSnapshot,
+  getServerMarketplaceListingsSnapshot,
   marketplaceCategories,
-  saveUserListing,
+  refreshMarketplaceListings,
   subscribeToMarketplaceListings,
-  type Category,
   type Listing,
 } from "./marketplace-data";
 
+type NewListingPhoto = {
+  file: File;
+  previewUrl: string;
+};
+
 export default function MarketplacePage() {
-  const { currentUser } = useAuth();
+  const { currentUser } = useProfile();
   const {
     activeView,
     activeCategory,
@@ -60,8 +64,12 @@ export default function MarketplacePage() {
     chooseFilterCategory,
     toggleSavedListing,
   } = useMarketplaceLayout();
-  const userListings = useSyncExternalStore(subscribeToMarketplaceListings, getUserListingsSnapshot, getServerUserListingsSnapshot);
-  const listings = useMemo(() => [...initialListings, ...userListings], [userListings]);
+  const listingsSnapshot = useSyncExternalStore(
+    subscribeToMarketplaceListings,
+    getMarketplaceListingsSnapshot,
+    getServerMarketplaceListingsSnapshot,
+  );
+  const listings = listingsSnapshot.listings;
   const [searchTerm, setSearchTerm] = useState("");
   const [sortOrder, setSortOrder] = useState("newest");
   const [conditionFilter, setConditionFilter] = useState("");
@@ -70,11 +78,18 @@ export default function MarketplacePage() {
   const [newTitle, setNewTitle] = useState("");
   const [newPrice, setNewPrice] = useState("");
   const [newDescription, setNewDescription] = useState("");
-  const [newPhotos, setNewPhotos] = useState<string[]>([]);
+  const [newPhotos, setNewPhotos] = useState<NewListingPhoto[]>([]);
+  const previewPhotoUrls = useRef(new Set<string>());
   const [activePhotoIndex, setActivePhotoIndex] = useState(0);
-  const [newCategory, setNewCategory] = useState<Category>("Classifieds");
+  const [newCategory, setNewCategory] = useState<Listing["category"]>("Classifieds");
   const [newCondition, setNewCondition] = useState("Used - good");
   const [newCategoryDetails, setNewCategoryDetails] = useState<Record<string, string>>({});
+  const [isPublishing, setIsPublishing] = useState(false);
+
+  useEffect(() => () => {
+    previewPhotoUrls.current.forEach((url) => URL.revokeObjectURL(url));
+    previewPhotoUrls.current.clear();
+  }, []);
 
   const filteredListings = useMemo(() => {
     const normalizedSearch = searchTerm.trim().toLowerCase();
@@ -92,7 +107,7 @@ export default function MarketplacePage() {
         activeView === "saved"
           ? savedListingIds.includes(listing.id)
           : activeView === "selling"
-            ? listing.seller === "You"
+            ? listing.sellerId === currentUser?.id
             : true;
       return matchesSearch && matchesCategory && matchesCondition && matchesMinPrice && matchesMaxPrice && matchesView;
     });
@@ -101,41 +116,54 @@ export default function MarketplacePage() {
     if (sortOrder === "price-high") results = [...results].sort((a, b) => b.price - a.price);
     if (sortOrder === "newest") results = [...results].reverse();
     return results;
-  }, [activeCategory, activeView, conditionFilter, listings, maxPriceFilter, minPriceFilter, savedListingIds, searchTerm, sortOrder]);
+  }, [activeCategory, activeView, conditionFilter, currentUser?.id, listings, maxPriceFilter, minPriceFilter, savedListingIds, searchTerm, sortOrder]);
 
-  const createListing = (event: FormEvent<HTMLFormElement>) => {
+  const createListing = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const numericPrice = Number(newPrice);
     if (!newTitle.trim() || !Number.isFinite(numericPrice) || numericPrice < 0) return;
 
-    const listing: Listing = {
-      id: `listing-${Date.now()}`,
-      title: newTitle.trim(),
-      price: numericPrice,
-      location: currentUser?.location || "Palo Alto, CA",
-      category: newCategory,
-      image: newPhotos[0] ?? "",
-      photos: newPhotos,
-      categoryDetails: Object.fromEntries(
-        Object.entries(newCategoryDetails).filter(([, value]) => value.trim()),
-      ),
-      condition: newCondition,
-      seller: "You",
-      description: newDescription.trim() || "Message me for more details.",
-      listed: "Just listed",
-    };
-    saveUserListing(listing);
+    if (!currentUser) {
+      toast.error("Choose a profile before listing an item.");
+      return;
+    }
+
+    setIsPublishing(true);
+    try {
+      await createMarketplaceListing({
+        sellerId: currentUser.id,
+        sellerName: currentUser.full_name,
+        title: newTitle.trim(),
+        price: numericPrice,
+        location: currentUser.location || "East Blue",
+        category: newCategory,
+        condition: newCondition,
+        description: newDescription.trim() || "Message me for more details.",
+        categoryDetails: newCategoryDetails,
+        photoFiles: newPhotos.map(({ file }) => file),
+      });
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not publish this listing.");
+      setIsPublishing(false);
+      return;
+    }
+
     chooseView("selling");
     setIsCreateOpen(false);
     setNewTitle("");
     setNewPrice("");
     setNewDescription("");
+    newPhotos.forEach(({ previewUrl }) => {
+      URL.revokeObjectURL(previewUrl);
+      previewPhotoUrls.current.delete(previewUrl);
+    });
     setNewPhotos([]);
     setActivePhotoIndex(0);
     setNewCondition("Used - good");
     setNewCategory("Classifieds");
     setNewCategoryDetails({});
-    toast.success("Your listing is ready to view.");
+    setIsPublishing(false);
+    toast.success("Your listing was published.");
   };
 
   const handlePhotoUpload = (files?: FileList | null) => {
@@ -147,7 +175,7 @@ export default function MarketplacePage() {
     }
 
     Array.from(files).slice(0, remainingSlots).forEach((file) => {
-      if (!file.type.startsWith("image/")) {
+      if (!file.type.toLowerCase().startsWith("image/")) {
         toast.error(`${file.name} is not an image.`);
         return;
       }
@@ -156,38 +184,25 @@ export default function MarketplacePage() {
         return;
       }
 
-      const reader = new FileReader();
-      reader.onload = () => {
-        if (typeof reader.result !== "string") return;
-        const source = new window.Image();
-        source.onload = () => {
-          const maxSide = 1024;
-          const scale = Math.min(1, maxSide / Math.max(source.naturalWidth, source.naturalHeight));
-          const canvas = document.createElement("canvas");
-          canvas.width = Math.max(1, Math.round(source.naturalWidth * scale));
-          canvas.height = Math.max(1, Math.round(source.naturalHeight * scale));
-          const context = canvas.getContext("2d");
-          if (!context) return;
-          context.drawImage(source, 0, 0, canvas.width, canvas.height);
-          const optimizedPhoto = canvas.toDataURL("image/jpeg", 0.68);
-          setNewPhotos((current) => {
-            if (current.length >= 10) return current;
-            if (current.length === 0) setActivePhotoIndex(0);
-            return [...current, optimizedPhoto];
-          });
-        };
-        source.src = reader.result;
-      };
-      reader.readAsDataURL(file);
+      const previewUrl = URL.createObjectURL(file);
+      previewPhotoUrls.current.add(previewUrl);
+      setNewPhotos((current) => current.length >= 10
+        ? current
+        : [...current, { file, previewUrl }]);
     });
   };
 
   const removePhoto = (index: number) => {
+    const removedPhoto = newPhotos[index];
+    if (removedPhoto) {
+      URL.revokeObjectURL(removedPhoto.previewUrl);
+      previewPhotoUrls.current.delete(removedPhoto.previewUrl);
+    }
     setNewPhotos((current) => current.filter((_, photoIndex) => photoIndex !== index));
     setActivePhotoIndex((current) => current > index ? current - 1 : current >= newPhotos.length - 1 ? Math.max(0, current - 1) : current);
   };
 
-  const previewPhoto = newPhotos[activePhotoIndex] ?? "";
+  const previewPhoto = newPhotos[activePhotoIndex]?.previewUrl ?? "";
 
   const saveListingDraft = () => {
     try {
@@ -218,23 +233,25 @@ export default function MarketplacePage() {
           : activeCategory || "Browse All";
   const previewListing: Listing = {
     id: "listing-preview",
+    sellerId: currentUser?.id,
     title: newTitle.trim() || "Your item title",
     price: Number(newPrice) || 0,
     location: currentUser?.location || "Palo Alto, CA",
     category: newCategory,
     image: previewPhoto,
-    photos: newPhotos,
+    photos: newPhotos.map(({ previewUrl }) => previewUrl),
     condition: newCondition,
     categoryDetails: newCategoryDetails,
     seller: "You",
     description: newDescription.trim() || "Your description will appear here.",
     listed: "a few seconds ago",
+    createdAt: "",
   };
   const filterCategories = marketplaceCategories;
   const filterConditions = Array.from(new Set(listings.map(({ condition }) => condition))).sort();
   const hasActiveMarketplaceView =
     activeView !== "browse" ||
-    Boolean(activeCategory || searchTerm || conditionFilter || minPriceFilter || maxPriceFilter);
+    Boolean(activeCategory);
 
   const showAllListings = () => {
     setSearchTerm("");
@@ -265,10 +282,10 @@ export default function MarketplacePage() {
                 variant="outline"
                 size="sm"
                 onClick={showAllListings}
-                className="mt-1 shrink-0 rounded-sm"
+                className="mt-1 shrink-0 rounded-sm md:hidden"
               >
                 <ArrowLeft className="size-4" />
-                <span>See all</span>
+                <span>All listing</span>
               </Button>
             )}
           </div>
@@ -300,7 +317,17 @@ export default function MarketplacePage() {
         </div>
 
         <Scroller hideScrollbar className="scrollbar-hide min-h-0 min-w-0 w-full flex-1 pb-10">
-          {filteredListings.length > 0 ? (
+          {listingsSnapshot.status === "loading" ? (
+            <div className="grid w-full min-w-0 grid-cols-2 gap-x-3 gap-y-5 sm:grid-cols-[repeat(auto-fill,minmax(13rem,1fr))] sm:gap-x-4" aria-label="Loading Marketplace listings" aria-busy="true">
+              {Array.from({ length: 8 }, (_, index) => <Card key={index} className="aspect-[4/5] animate-pulse rounded-sm border-border bg-card shadow-none" />)}
+            </div>
+          ) : listingsSnapshot.status === "error" ? (
+            <Card className="rounded-sm border border-border bg-card px-5 py-12 text-center shadow-none ring-0">
+              <h3 className="text-lg font-bold">Marketplace listings could not load</h3>
+              <p className="mx-auto mt-1 max-w-lg text-sm text-muted-foreground">{listingsSnapshot.error}</p>
+              <Button onClick={() => void refreshMarketplaceListings()} className="mt-4 rounded-sm">Try again</Button>
+            </Card>
+          ) : filteredListings.length > 0 ? (
             <div className="grid w-full min-w-0 grid-cols-2 gap-x-3 gap-y-5 sm:grid-cols-[repeat(auto-fill,minmax(13rem,1fr))] sm:gap-x-4">
               {filteredListings.map((listing) => <ListingCard key={listing.id} listing={listing} isSaved={savedListingIds.includes(listing.id)} onSave={() => toggleSavedListing(listing.id)} />)}
             </div>
@@ -344,9 +371,9 @@ export default function MarketplacePage() {
                     </div>
                     <div className="grid grid-cols-3 gap-2.5 sm:grid-cols-3">
                       {newPhotos.map((photo, index) => (
-                        <div key={`${index}-${photo.slice(0, 32)}`} className="relative aspect-square overflow-hidden rounded-md border border-border bg-muted">
+                        <div key={`${index}-${photo.file.name}-${photo.file.lastModified}`} className="relative aspect-square overflow-hidden rounded-md border border-border bg-muted">
                           <button type="button" onClick={() => setActivePhotoIndex(index)} aria-label={`Preview photo ${index + 1}`} className="absolute inset-0 z-0">
-                            <Image src={photo} alt={`Listing photo ${index + 1}`} fill unoptimized className="object-cover" />
+                            <Image src={photo.previewUrl} alt={`Listing photo ${index + 1}`} fill unoptimized className="object-cover" />
                           </button>
                           <Button type="button" variant="secondary" size="icon" aria-label={`Remove photo ${index + 1}`} onClick={() => removePhoto(index)} className="absolute right-1.5 top-1.5 z-10 size-7 rounded-full bg-card shadow-sm">
                             <X className="size-4" />
@@ -381,7 +408,7 @@ export default function MarketplacePage() {
                       <div className="space-y-1.5">
                         <label htmlFor="listing-category" className="text-sm font-medium">Category</label>
                         <Select value={newCategory} onValueChange={(value) => {
-                          const category = String(value ?? "Classifieds") as Category;
+                          const category = String(value ?? "Classifieds") as Listing["category"];
                           setNewCategory(category);
                           setNewCategoryDetails((current) => Object.fromEntries(Object.entries(current).filter(([field]) => categoryDetailFields[category].includes(field))));
                         }}>
@@ -434,7 +461,7 @@ export default function MarketplacePage() {
                 </form>
 
                 <div className="shrink-0 border-t border-border bg-card px-4 py-3 sm:px-5">
-                  <Button form="create-listing-form" type="submit" disabled={!newTitle.trim() || !newPrice} className="h-11 w-full rounded-md bg-primary text-sm font-semibold text-primary-foreground hover:bg-primary/90">Publish listing</Button>
+                  <Button form="create-listing-form" type="submit" disabled={isPublishing || !newTitle.trim() || !newPrice} className="h-11 w-full rounded-md bg-primary text-sm font-semibold text-primary-foreground hover:bg-primary/90">{isPublishing ? "Publishing…" : "Publish listing"}</Button>
                 </div>
               </section>
 
@@ -442,7 +469,7 @@ export default function MarketplacePage() {
                 <Card className="min-h-0 flex-1 overflow-hidden rounded-sm border border-border bg-card p-0 shadow-none ring-0">
                   <ListingDetailsView
                     listing={previewListing}
-                    photos={newPhotos}
+                    photos={newPhotos.map(({ previewUrl }) => previewUrl)}
                     activeIndex={activePhotoIndex}
                     onActiveIndexChange={setActivePhotoIndex}
                     priceLabel={newPrice ? formatPrice(Number(newPrice)) : "Set a price"}

@@ -21,7 +21,7 @@ import {
   Wrench,
   type LucideIcon,
 } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { useProfile } from "@/context/ProfileContext";
 import {
   SidebarGroup,
   SidebarGroupContent,
@@ -34,9 +34,8 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import {
-  getServerUserListingsSnapshot,
-  getUserListingsSnapshot,
-  initialListings,
+  getMarketplaceListingsSnapshot,
+  getServerMarketplaceListingsSnapshot,
   marketplaceCategories,
   subscribeToMarketplaceListings,
   type Category,
@@ -78,13 +77,14 @@ export function MarketplaceNavigation() {
     chooseCategory,
     openCreateListing,
   } = useMarketplaceLayout();
+  const { currentUser } = useProfile();
   const { isMobile, setOpenMobile } = useSidebar();
-  const userListings = useSyncExternalStore(
+  const listingsSnapshot = useSyncExternalStore(
     subscribeToMarketplaceListings,
-    getUserListingsSnapshot,
-    getServerUserListingsSnapshot,
+    getMarketplaceListingsSnapshot,
+    getServerMarketplaceListingsSnapshot,
   );
-  const listings = useMemo(() => [...initialListings, ...userListings], [userListings]);
+  const listings = listingsSnapshot.listings;
   const categoryCounts = useMemo(
     () => Object.fromEntries(
       marketplaceCategories.map((category) => [
@@ -94,7 +94,7 @@ export function MarketplaceNavigation() {
     ) as Record<Category, number>,
     [listings],
   );
-  const sellingCount = listings.filter((listing) => listing.seller === "You").length;
+  const sellingCount = listings.filter((listing) => listing.sellerId === currentUser?.id).length;
 
   const closeMobileSidebar = () => {
     if (isMobile) setOpenMobile(false);

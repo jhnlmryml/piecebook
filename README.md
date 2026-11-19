@@ -1,6 +1,6 @@
 # Piecebook
 
-Piecebook is a personal social wall project inspired by the classic Facebook Wall. I built it to explore a familiar social feed experience with responsive layouts, image uploads, live updates, and a small collection of sample profiles.
+Piecebook is a personal social wall project inspired by the classic Facebook Wall. It explores a familiar social feed experience with responsive layouts, image uploads, live updates, and profiles loaded from Supabase.
 
 The interface is designed as a focused, full-height app: navigation stays in place while the wall content scrolls. On larger screens, the home page also showcases previews of my other projects.
 
@@ -8,13 +8,14 @@ The interface is designed as a focused, full-height app: navigation stays in pla
 
 - Browse the wall, search posts, like posts, and publish text or image posts.
 - Drag and drop photos into the composer or choose them with the file picker.
-- View each sample profile and that profile's posts, or browse the friends directory.
+- View profiles and their posts, or browse the profiles directory.
+- Edit your profile details and upload a profile photo.
 - Receive wall changes through Supabase Realtime.
 - Delete posts with confirmation and remove their associated images from Supabase Storage.
 - Switch between Light, Dark, and Device themes with a single button.
 - View previews and project details for my other work in the desktop sidebar.
 
-The composer allows up to 280 characters and five images per post. Each image must be 5 MB or smaller and use JPEG, PNG, GIF, WebP, or AVIF format.
+The composer allows up to 280 characters and five images per post. Each image must be 5 MB or smaller and use an image format supported by the browser.
 
 ## Technology
 
@@ -26,7 +27,7 @@ The composer allows up to 280 characters and five images per post. Each image mu
 
 ## How the app is organized
 
-Routes in `app/` stay small and compose the relevant page-level feature. The root layout sets up the theme, demo profile context, shared tooltip behavior, and notifications.
+Routes in `app/` stay small and compose the relevant page-level feature. The root layout sets up the theme, Supabase profile context, shared tooltip behavior, and notifications.
 
 ```text
 app/                         Routes, root layout, global styles
@@ -39,13 +40,13 @@ components/
   shared/                    Loading placeholders
   theme/                     Theme provider and theme control
   ui/                        Reusable interface primitives
-context/AuthContext.tsx      Selected sample profile state
-data/demo-users.ts           Sample profiles and profile details
+context/ProfileContext.tsx   Supabase profile data and selected persona state
+lib/user-profiles.ts         Supabase profile query and normalization
 data/portfolio-works.ts      Projects shown in the home sidebar
 lib/posts.ts                 Post queries and mutations
 lib/supabase.ts              Supabase browser client
 types/                       Database and application types
-public/images/               Sample profile photos
+public/images/               Static image assets
 ```
 
 ### Main routes
@@ -53,17 +54,21 @@ public/images/               Sample profile photos
 | Route | Experience |
 | --- | --- |
 | `/` | Wall, post composer, search, and project showcase |
-| `/profile` | Selected sample profile and its posts |
-| `/profile/[userId]` | Another sample profile and its posts |
-| `/friends` | Sample profile directory |
+| `/profile` | Selected profile and its posts |
+| `/profile/[userId]` | Another profile and its posts |
+| `/friends` | Profile directory |
 
 ## Data and interaction model
 
-The sample profiles live in `data/demo-users.ts`. The selected profile is saved in browser session storage so the profile switcher can demonstrate different authorship and feed views without a sign-in flow.
+Profiles are loaded from `public.users`. The profile named Monkey D. Luffy is selected on a fresh browser visit; the last selected profile is saved locally. Switching profiles saves the selected `public.users.id` and reloads the app. This is a profile persona switcher, not Supabase Auth.
 
-Posts are stored in Supabase's `public.post` table. `WallFeed` loads the newest 50 posts, filters them, handles likes and deletion, and subscribes to Postgres changes while keeping the displayed feed capped at 50. The composer uploads image files to the `post-images` Storage bucket, then saves their public URLs with the post. Post deletion removes matching owned image objects before deleting the row.
+The app uses `public.posts`. The existing `public.post` table remains in the database but is unused; `supabase-schema.sql` copies its legacy rows into `public.posts` without dropping or renaming it. Posts, comments, likes, marketplace activity, and profile edits identify the selected persona with its `public.users.id`. `WallFeed` loads the newest 50 posts and handles likes and deletion. Comments are stored in `public.post_comments`; each comment can include text, an image, or both. Post and comment images are saved in the `post-images` Storage bucket; profile photos use `profile-images`.
 
-The profile and friend data are local demo content; Supabase is used for the shared wall posts and uploaded media. The current profile switcher is not authentication. Anonymous database and storage policies are suitable only for a demo and must be replaced with authenticated, user-scoped policies before this pattern is used for a public social app.
+Marketplace listings are loaded from `public.marketplace_listing`; listing photos are uploaded to the `marketplace-listing-images` Storage bucket. Listing likes and comments are stored in `public.marketplace_listing_likes` and `public.marketplace_listing_comments`; listing comments support image attachments. Seller messages are inserted into the general `public.message` table, and emoji reactions are stored in `public.message_reactions`. Run `supabase-schema.sql` in the Supabase SQL Editor before using these features. The marketplace starts empty until listings are created in Supabase.
+
+Supabase stores profiles, shared posts, comments, marketplace listings, messages, and uploaded media. Apply `supabase-schema.sql` in the Supabase SQL Editor to remove the old `owner_id` columns, configure the profile-based policies and image buckets, and add the realtime tables. The app keeps one Realtime channel for the selected profile's live wall and marketplace engagement updates. Marketplace listing row changes are intentionally excluded from that channel.
+
+The profile switcher is only a demo identity selector. Anyone with the app's public Supabase key can choose any profile, and the schema allows public reads and writes so the app works without an Auth session. Do not store private user data or use this setup for a production app that needs account ownership.
 
 ## Implementation notes
 

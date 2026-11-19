@@ -2,10 +2,18 @@
 
 import { useState } from "react";
 import Image from "next/image";
-import { Bookmark, ChevronLeft, ChevronRight, ImageOff, MessageCircle } from "lucide-react";
+import {
+  Bookmark,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  ChevronUp,
+  ImageOff,
+  MessageCircle,
+} from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
-import { useAuth } from "@/context/AuthContext";
+import { useProfile } from "@/context/ProfileContext";
 import { getInitials } from "@/lib/get-initials";
 import { formatPrice, isOwnMarketplaceListing, type Listing } from "./marketplace-data";
 
@@ -90,6 +98,7 @@ type ListingDetailsPanelProps = {
   isSaved?: boolean;
   onSave?: () => void;
   onMessage?: () => void;
+  onViewMessages?: () => void;
   priceLabel?: string;
   className?: string;
 };
@@ -99,11 +108,14 @@ export function ListingDetailsPanel({
   isSaved = false,
   onSave,
   onMessage,
+  onViewMessages,
   priceLabel,
   className = "",
 }: ListingDetailsPanelProps) {
-  const { currentUser } = useAuth();
-  const isOwnListing = isOwnMarketplaceListing(listing);
+  const { currentUser, isLoading } = useProfile();
+  const [isDescriptionExpanded, setIsDescriptionExpanded] = useState(false);
+  const isOwnListing = isOwnMarketplaceListing(listing, currentUser?.id);
+  const canUseSellerActions = !isLoading && Boolean(currentUser) && !isOwnListing;
   const sellerName = isOwnListing ? currentUser?.full_name ?? "You" : listing.seller;
   const sellerImage = isOwnListing ? currentUser?.image : undefined;
   const categoryDetails = Object.entries(listing.categoryDetails ?? {}).filter(([, value]) => value.trim());
@@ -115,45 +127,63 @@ export function ListingDetailsPanel({
   const allCategoryDetails = [...categoryDetails, ...additionalDetails];
 
   return (
-    <section className={`flex min-h-0 flex-col overflow-y-auto p-5 sm:p-7 ${className}`} aria-label="Listing details">
+    <section className={`flex min-h-0 flex-col overflow-y-auto p-4 sm:p-5 ${className}`} aria-label="Listing details">
       <header>
-        <h1 className="text-xl font-bold leading-tight sm:text-2xl">{listing.title}</h1>
+        <h1 className="text-lg font-bold leading-tight sm:text-xl">{listing.title}</h1>
         <div className="mt-1 flex items-baseline gap-2">
-          <p className="text-xl font-medium">{priceLabel ?? formatPrice(listing.price)}</p>
+          <p className="text-lg font-semibold">{priceLabel ?? formatPrice(listing.price)}</p>
           {listing.previousPrice != null && <p className="text-sm text-muted-foreground line-through">{formatPrice(listing.previousPrice)}</p>}
         </div>
-        <p className="mt-1 text-sm text-muted-foreground">Listed {listing.listed}</p>
+        <p className="mt-1 text-xs text-muted-foreground">Listed {listing.listed}</p>
       </header>
 
-      {!isOwnListing && (onMessage || onSave) && (
-        <div className="mt-4 grid grid-cols-2 gap-2">
-          {onMessage && <Button type="button" onClick={onMessage} className="h-10 rounded-sm bg-primary font-semibold text-primary-foreground hover:bg-primary/90"><MessageCircle className="size-4" />Message</Button>}
-          {onSave && <Button type="button" variant="secondary" onClick={onSave} className="h-10 rounded-sm font-semibold"><Bookmark className={`size-4 ${isSaved ? "fill-current" : ""}`} />{isSaved ? "Saved" : "Save"}</Button>}
+      {canUseSellerActions && (onMessage || onSave) && (
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          {onMessage && <Button type="button" onClick={onMessage} className="h-9 rounded-md bg-primary font-semibold text-primary-foreground hover:bg-primary/90"><MessageCircle className="size-4" />Message</Button>}
+          {onSave && <Button type="button" variant="secondary" onClick={onSave} className="h-9 rounded-md font-semibold"><Bookmark className={`size-4 ${isSaved ? "fill-current" : ""}`} />{isSaved ? "Saved" : "Save"}</Button>}
         </div>
       )}
+      {onViewMessages && (
+        <Button type="button" variant="secondary" onClick={onViewMessages} className="mt-3 h-9 w-full rounded-md font-semibold">
+          <MessageCircle className="size-4" />View messages
+        </Button>
+      )}
 
-      <div className="mt-6 border-t border-border pt-4">
-        <h2 className="text-base font-bold">Details</h2>
-        <dl className="mt-3 space-y-2.5 text-sm">
+      <div className="mt-4 border-t border-border pt-3">
+        <h2 className="text-sm font-bold">Details</h2>
+        <dl className="mt-2 space-y-2 text-sm">
           <div className="flex justify-between gap-4"><dt className="font-semibold">Category</dt><dd className="text-right text-muted-foreground">{listing.category}</dd></div>
           <div className="flex justify-between gap-4"><dt className="font-semibold">Condition</dt><dd className="text-right text-muted-foreground">{listing.condition}</dd></div>
         </dl>
-        {allCategoryDetails.length > 0 && <div className="mt-4 border-t border-border pt-3"><h3 className="text-sm font-semibold">Category details</h3><dl className="mt-2 space-y-2.5 text-sm">{allCategoryDetails.map(([label, value]) => <div key={label} className="flex justify-between gap-4"><dt className="font-semibold">{label}</dt><dd className="text-right text-muted-foreground">{value}</dd></div>)}</dl></div>}
-        <div className="mt-4">
+        {allCategoryDetails.length > 0 && <div className="mt-3 border-t border-border pt-3"><h3 className="text-sm font-semibold">Category details</h3><dl className="mt-2 space-y-2 text-sm">{allCategoryDetails.map(([label, value]) => <div key={label} className="flex justify-between gap-4"><dt className="shrink-0 font-medium">{label}</dt><dd className="min-w-0 break-words text-right text-muted-foreground">{value}</dd></div>)}</dl></div>}
+        <div className="mt-3">
           <h3 className="text-sm font-semibold">Description</h3>
-          <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed">{listing.description}</p>
+          <p className={`mt-1 whitespace-pre-wrap text-sm leading-relaxed ${isDescriptionExpanded ? "" : "line-clamp-4"}`}>{listing.description}</p>
+          {listing.description.length > 240 && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              aria-expanded={isDescriptionExpanded}
+              onClick={() => setIsDescriptionExpanded((expanded) => !expanded)}
+              className="mt-1 h-7 rounded-md px-1.5 text-xs text-primary"
+            >
+              {isDescriptionExpanded ? "Show less" : "Read full description"}
+              {isDescriptionExpanded ? <ChevronUp className="size-3.5" /> : <ChevronDown className="size-3.5" />}
+            </Button>
+          )}
         </div>
       </div>
 
-      <div className="mt-5 border-t border-border pt-4">
-        <h2 className="text-base font-bold">Address</h2>
-        <p className="mt-2 text-sm text-muted-foreground">{listing.location}</p>
+      <div className="mt-4 border-t border-border pt-3">
+        <h2 className="text-sm font-bold">Address</h2>
+        <p className="mt-1 text-sm text-muted-foreground">{listing.location}</p>
       </div>
 
-      <div className="mt-5 border-t border-border pt-4">
-        <div className="flex items-center justify-between gap-3"><h2 className="text-base font-bold">Seller information</h2><span className="text-sm font-medium text-primary">Seller details</span></div>
-        <div className="mt-3 flex items-center gap-3">
-          <Avatar className="size-11"><AvatarImage src={sellerImage} alt={sellerName} /><AvatarFallback className="bg-secondary text-primary">{getInitials(sellerName)}</AvatarFallback></Avatar>
+      <div className="mt-4 border-t border-border pt-3">
+        <div className="flex items-center justify-between gap-3"><h2 className="text-sm font-bold">Seller information</h2><span className="text-xs font-medium text-primary">Seller details</span></div>
+        <div className="mt-2 flex items-center gap-2.5">
+          <Avatar className="size-9"><AvatarImage src={sellerImage} alt={sellerName} /><AvatarFallback className="bg-secondary text-primary">{getInitials(sellerName)}</AvatarFallback></Avatar>
           <div><p className="text-sm font-semibold">{sellerName}</p><p className="text-xs text-muted-foreground">Joined Piecebook in 2024</p></div>
         </div>
       </div>
@@ -174,6 +204,7 @@ export function ListingDetailsView({
   isSaved,
   onSave,
   onMessage,
+  onViewMessages,
   priceLabel,
   className,
   imageClassName,
@@ -182,7 +213,7 @@ export function ListingDetailsView({
   return (
     <div className={`${layoutClassName} ${className ?? ""}`}>
       <ListingPhotoGallery listing={listing} photos={photos} activeIndex={activeIndex} onActiveIndexChange={onActiveIndexChange} className={imageClassName} />
-      <ListingDetailsPanel listing={listing} isSaved={isSaved} onSave={onSave} onMessage={onMessage} priceLabel={priceLabel} />
+      <ListingDetailsPanel listing={listing} isSaved={isSaved} onSave={onSave} onMessage={onMessage} onViewMessages={onViewMessages} priceLabel={priceLabel} />
     </div>
   );
 }

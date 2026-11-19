@@ -14,24 +14,49 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { useAuth } from "@/context/AuthContext";
+import { useProfile } from "@/context/ProfileContext";
 import { getInitials } from "@/lib/get-initials";
 import { ProfileSkeleton } from "@/components/shared/LoadingSkeletons";
+import { ProfileEditDialog } from "@/components/features/profile/ProfileEditDialog";
 import type { UserProfile } from "@/types/user-profile";
 
 type ProfileCardProps = {
   expanded?: boolean;
+  enableEditing?: boolean;
   user?: UserProfile | null;
 };
 
+function formatBirthdate(value: string) {
+  const date = new Date(`${value}T00:00:00`);
+  if (!value || Number.isNaN(date.getTime())) return value;
+
+  return new Intl.DateTimeFormat("en-US", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  }).format(date);
+}
+
 export default function ProfileCard({
   expanded = false,
+  enableEditing = false,
   user,
 }: ProfileCardProps) {
-  const { currentUser } = useAuth();
+  const { currentUser, isLoading } = useProfile();
   const profileUser = user ?? currentUser;
 
-  if (!profileUser) return <ProfileSkeleton />;
+  if (!profileUser) {
+    return isLoading ? (
+      <ProfileSkeleton />
+    ) : (
+      <div className="piecebook-card-surface rounded-sm border p-4 text-sm">
+        <p className="font-semibold">No profile data found</p>
+        <p className="piecebook-muted-text mt-1 text-xs">
+          Add a profile to the public.users table in Supabase.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <>
@@ -39,7 +64,9 @@ export default function ProfileCard({
         <Card className="piecebook-card-surface gap-0 rounded-sm border py-0 shadow-none md:hidden">
           <CardContent className="flex items-center gap-3 p-3">
             <Avatar className="size-12 shrink-0 rounded-sm">
-              <AvatarImage src={profileUser.image} alt={profileUser.full_name} />
+              {profileUser.image && (
+                <AvatarImage src={profileUser.image} alt={profileUser.full_name} />
+              )}
               <AvatarFallback className="piecebook-avatar-fallback rounded-sm">
                 {getInitials(profileUser.full_name)}
               </AvatarFallback>
@@ -60,11 +87,13 @@ export default function ProfileCard({
         <Card className="piecebook-card-surface gap-0 rounded-sm border py-0 shadow-none">
           <CardContent className="p-0">
             <Avatar className="aspect-square h-auto w-full rounded-none border-none bg-muted after:hidden">
-              <AvatarImage
-                src={profileUser.image}
-                alt={profileUser.full_name}
-                className="object-contain rounded-none"
-              />
+              {profileUser.image && (
+                <AvatarImage
+                  src={profileUser.image}
+                  alt={profileUser.full_name}
+                  className="object-contain rounded-none"
+                />
+              )}
               <AvatarFallback className="piecebook-avatar-fallback h-full w-full rounded-none border-none text-3xl">
                 {getInitials(profileUser.full_name)}
               </AvatarFallback>
@@ -99,7 +128,7 @@ export default function ProfileCard({
                 aria-hidden="true"
                 className="mt-0.5 size-3.5 shrink-0"
               />
-              <span>Birthday: {profileUser.birthdate}</span>
+              <span>Birthday: {formatBirthdate(profileUser.birthdate)}</span>
             </p>
             <p className="flex gap-2">
               <Gamepad2
@@ -124,6 +153,7 @@ export default function ProfileCard({
             </p>
           </CardContent>
         </Card>
+        {enableEditing && <ProfileEditDialog user={profileUser} />}
       </div>
     </>
   );
