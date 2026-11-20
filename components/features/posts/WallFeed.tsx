@@ -210,7 +210,7 @@ export default function WallFeed({
       const likes = await togglePostLike(
         post.id,
         currentUser.id,
-        post.likes_by,
+        post.likes_by?.includes(currentUser.id) ?? false,
       );
       setPosts((currentPosts) =>
         currentPosts.map((item) =>
@@ -239,7 +239,8 @@ export default function WallFeed({
 
     setIsDeletingPost(true);
     try {
-      await deleteWallPost(post.id, currentUser.id);
+      const result = await deleteWallPost(post.id, currentUser.id);
+      if (result.cleanupWarning) toast.warning(result.cleanupWarning);
       deletedPostIds.current.add(post.id);
       setPosts((currentPosts) =>
         currentPosts.filter((item) => item.id !== post.id),
@@ -300,7 +301,7 @@ export default function WallFeed({
       {realtimeStatus === "error" && (
         <p
           role="status"
-          className="rounded-sm border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-400/30 dark:bg-amber-400/10 dark:text-amber-200"
+          className="rounded-sm border hidden border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-400/30 dark:bg-amber-400/10 dark:text-amber-200"
         >
           Live updates could not connect. Check the Supabase Realtime
           configuration in the setup guide.
@@ -433,14 +434,14 @@ export default function WallFeed({
                         )}
                       </div>
                       {post.post && (
-                        <p className="mt-3 whitespace-pre-wrap break-words text-sm leading-relaxed text-foreground">
+                        <p className="mt-3 whitespace-pre-wrap wrap-break-word text-sm leading-relaxed text-foreground">
                           {post.post}
                         </p>
                       )}
                       {post.image?.map((imageUrl, index) => (
                         <div
                           key={`${post.id}-${imageUrl}`}
-                          className="relative mt-3 aspect-[16/10] w-full overflow-hidden rounded-sm bg-muted"
+                          className="relative mt-3 aspect-16/10 w-full overflow-hidden rounded-sm bg-muted"
                         >
                           <Image
                             src={imageUrl}
@@ -452,7 +453,7 @@ export default function WallFeed({
                           />
                         </div>
                       ))}
-                      <div className="piecebook-divider mt-4 flex flex-wrap items-start gap-2 border-t pt-2">
+                      <div className="piecebook-divider mt-4 flex flex-wrap items-start gap-2 border-t pt-2 text-xs">
                         <Button
                           type="button"
                           variant="ghost"
@@ -468,7 +469,7 @@ export default function WallFeed({
                           />
                           Like
                           {(post.likes_by?.length ?? 0) > 0 &&
-                            ` · ${post.likes_by?.length}`}
+                            ` ${post.likes_by?.length}`}
                         </Button>
                         <PostComments postId={post.id} />
                       </div>

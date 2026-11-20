@@ -57,7 +57,7 @@ export function NameSkeleton() {
 
 export function WallPostSkeleton() {
     return (
-        <Card className="gap-0 rounded-sm border border-[#d7dce2] py-0 shadow-none">
+        <Card className="gap-0 rounded-sm border border-border py-0 shadow-none">
             <CardContent className="flex gap-3 p-3 sm:p-4">
                 <Avatar className="size-10 shrink-0 rounded-sm">
                     <AvatarFallback>

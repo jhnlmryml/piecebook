@@ -3,9 +3,16 @@
 import {
   useCallback,
   useState,
-  type FormEvent,
+  type SubmitEvent,
 } from "react";
 import { toast } from "sonner";
+import {
+  imageFileSchema,
+  postDraftSchema,
+  POST_MAX_LENGTH,
+  IMAGE_MAX_COUNT,
+  IMAGE_MAX_SIZE,
+} from "@/lib/form-schemas";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import type { FileUploadProps } from "@/components/ui/file-upload";
 import { useProfile } from "@/context/ProfileContext";
@@ -13,14 +20,13 @@ import { getInitials } from "@/lib/get-initials";
 import { PostComposerInput } from "@/components/features/posts/PostComposerInput";
 import {
   createWallPost,
-  POST_IMAGE_BUCKET,
+  removePostImages,
+  uploadPostImage,
   type WallPost,
 } from "@/lib/posts";
-import { getSupabaseClient } from "@/lib/supabase";
 
-const MAX_CHARS = 280;
-const MAX_FILES = 5;
-const MAX_FILE_SIZE = 5 * 1024 * 1024;
+const MAX_CHARS = POST_MAX_LENGTH;
+const MAX_FILES = IMAGE_MAX_COUNT;
 const IMAGE_ACCEPT_ATTRIBUTE = "image/*";
 
 type PostComposerProps = {
@@ -49,11 +55,19 @@ export function PostComposer({ onPostCreated }: PostComposerProps) {
     if (objectPaths.length === 0) return;
 
     try {
-      const { error } = await getSupabaseClient()
-        .storage.from(POST_IMAGE_BUCKET)
-        .remove(objectPaths);
-
-      if (error) throw error;
+      const pathsByProfile = new Map<string, string[]>();
+      for (const path of objectPaths) {
+        const ownerId = path.split("/")[0];
+        if (!ownerId) continue;
+        const paths = pathsByProfile.get(ownerId) ?? [];
+        paths.push(path);
+        pathsByProfile.set(ownerId, paths);
+      }
+      await Promise.all(
+        [...pathsByProfile].map(([ownerId, paths]) =>
+          removePostImages(ownerId, paths),
+        ),
+      );
     } catch (error) {
       toast.error(
         error instanceof Error
@@ -74,28 +88,15 @@ export function PostComposer({ onPostCreated }: PostComposerProps) {
 
     setIsUploading(true);
     try {
-      const supabase = getSupabaseClient();
-      const imageBucket = supabase.storage.from(POST_IMAGE_BUCKET);
-
       await Promise.all(
         uploadFiles.map(async (file) => {
           try {
-            const safeFileName = file.name
-              .replace(/[^a-zA-Z0-9._-]/g, "-")
-              .slice(0, 120);
-            const objectPath = `${currentUser.id}/${crypto.randomUUID()}-${safeFileName}`;
-            const { error } = await imageBucket.upload(objectPath, file, {
-              contentType: file.type,
-            });
-
-            if (error) throw error;
-
-            const { data } = imageBucket.getPublicUrl(objectPath);
+            const uploaded = await uploadPostImage(file, currentUser.id);
             setUploadedImages((images) =>
               new Map(images).set(file, {
                 profileId: currentUser.id,
-                objectPath,
-                publicUrl: data.publicUrl,
+                objectPath: uploaded.path,
+                publicUrl: uploaded.url,
               }),
             );
             onProgress(file, 100);
@@ -137,17 +138,22 @@ export function PostComposer({ onPostCreated }: PostComposerProps) {
     void removeUnusedImages(removedObjectPaths);
   }, [files, removeUnusedImages, uploadedImages]);
 
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
-    const text = message.trim();
+    const validation = postDraftSchema.safeParse({
+      body: message,
+      imageFiles: files,
+    });
+    if (!validation.success) {
+      toast.error(
+        validation.error.issues[0]?.message ?? "Check your post and try again.",
+      );
+      return;
+    }
+    const text = validation.data.body;
 
     if (!currentUser) {
       toast.error("Choose a profile before posting.");
-      return;
-    }
-
-    if (!text && files.length === 0) {
-      toast.error("Write something or add a photo.");
       return;
     }
 
@@ -223,26 +229,23 @@ export function PostComposer({ onPostCreated }: PostComposerProps) {
         onUpload,
         onFileReject: (file, reason) => toast.error(`${file.name}: ${reason}`),
         onFileValidate: (file) => {
-          if (!file.type.toLowerCase().startsWith("image/")) {
-            return "Choose an image file to upload.";
-          }
-          if (file.size > MAX_FILE_SIZE) {
-            return "File exceeds 5MB limit.";
-          }
-          return null;
+          const validation = imageFileSchema.safeParse(file);
+          return validation.success
+            ? null
+            : validation.error.issues[0]?.message ?? "Choose a valid image.";
         },
         accept: IMAGE_ACCEPT_ATTRIBUTE,
         maxFiles: MAX_FILES,
-        maxSize: MAX_FILE_SIZE,
+        maxSize: IMAGE_MAX_SIZE,
         multiple: true,
         showProgress: true,
         attachmentLabel: "Attach photo",
         dropzoneTitle: "Drag & drop photos here",
-        dropzoneDescription: `Up to ${MAX_FILES} photos, max 5MB each`,
+        dropzoneDescription: `Up to ${MAX_FILES} photos, max ${IMAGE_MAX_SIZE / 1024 / 1024} MB each`,
       }}
       header={
-        <div className="inline-flex shrink-0 items-center gap-4 piecebook-divider piecebook-muted-surface border-b px-4 py-1">
-          <Avatar className="mt-1 block size-9 shrink-0 md:hidden">
+        <div className="flex shrink-0 items-center gap-3 px-3 pt-2">
+          <Avatar className="size-9 shrink-0">
             {currentUser?.image && (
               <AvatarImage src={currentUser.image} alt={currentUser.full_name} />
             )}
@@ -250,14 +253,14 @@ export function PostComposer({ onPostCreated }: PostComposerProps) {
               {currentUser ? getInitials(currentUser.full_name) : "?"}
             </AvatarFallback>
           </Avatar>
-          <h2 className="piecebook-brand-text text-sm font-bold">
+          <h2 className="text-sm font-semibold text-foreground">
             Write on your wall
           </h2>
         </div>
       }
-      submitButtonSize="default"
-      submitButtonClassName="bg-primary hover:bg-primary/90 [&_svg]:size-3.5"
-      submitLabel="Share"
+      submitButtonSize="icon-lg"
+      submitButtonClassName="size-10 rounded-full bg-primary shadow-sm hover:bg-primary/90 [&_svg]:size-4"
+      submitAriaLabel="Share post"
       showCharacterCount
     />
   );

@@ -130,8 +130,10 @@ export type Database = {
           photos: string[]
           previous_price: number | null
           price: number
+          quantity: number
           seller_id: string
           seller_name: string
+          status: string
           title: string
         }
         Insert: {
@@ -147,8 +149,10 @@ export type Database = {
           photos?: string[]
           previous_price?: number | null
           price: number
+          quantity?: number
           seller_id: string
           seller_name: string
+          status?: string
           title: string
         }
         Update: {
@@ -164,8 +168,10 @@ export type Database = {
           photos?: string[]
           previous_price?: number | null
           price?: number
+          quantity?: number
           seller_id?: string
           seller_name?: string
+          status?: string
           title?: string
         }
         Relationships: [
@@ -177,6 +183,184 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      marketplace_orders: {
+        Row: {
+          buyer_id: string
+          buyer_image: string | null
+          buyer_location: string | null
+          buyer_name: string
+          buyer_role: string | null
+          created_at: string
+          id: string
+          listing_category: string
+          listing_category_details: Json
+          listing_color: string | null
+          listing_condition: string
+          listing_description: string
+          listing_location: string
+          listing_material: string | null
+          listing_photos: string[]
+          listing_previous_price: number | null
+          listing_id: string | null
+          listing_title: string
+          quantity: number
+          seller_id: string
+          seller_image: string | null
+          seller_location: string | null
+          seller_name: string
+          seller_role: string | null
+          source_listing_id: string | null
+          total_price: number
+          unit_price: number
+        }
+        Insert: {
+          buyer_id: string
+          buyer_image?: string | null
+          buyer_location?: string | null
+          buyer_name: string
+          buyer_role?: string | null
+          created_at?: string
+          id?: string
+          listing_category?: string
+          listing_category_details?: Json
+          listing_color?: string | null
+          listing_condition?: string
+          listing_description?: string
+          listing_location?: string
+          listing_material?: string | null
+          listing_photos?: string[]
+          listing_previous_price?: number | null
+          listing_id?: string | null
+          listing_title: string
+          quantity: number
+          seller_id: string
+          seller_image?: string | null
+          seller_location?: string | null
+          seller_name: string
+          seller_role?: string | null
+          source_listing_id?: string | null
+          total_price: number
+          unit_price: number
+        }
+        Update: {
+          buyer_id?: string
+          buyer_image?: string | null
+          buyer_location?: string | null
+          buyer_name?: string
+          buyer_role?: string | null
+          created_at?: string
+          id?: string
+          listing_category?: string
+          listing_category_details?: Json
+          listing_color?: string | null
+          listing_condition?: string
+          listing_description?: string
+          listing_location?: string
+          listing_material?: string | null
+          listing_photos?: string[]
+          listing_previous_price?: number | null
+          listing_id?: string | null
+          listing_title?: string
+          quantity?: number
+          seller_id?: string
+          seller_image?: string | null
+          seller_location?: string | null
+          seller_name?: string
+          seller_role?: string | null
+          source_listing_id?: string | null
+          total_price?: number
+          unit_price?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "marketplace_orders_listing_id_fkey"
+            columns: ["listing_id"]
+            isOneToOne: false
+            referencedRelation: "marketplace_listing"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "marketplace_orders_buyer_id_fkey"
+            columns: ["buyer_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "marketplace_orders_seller_id_fkey"
+            columns: ["seller_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      marketplace_listing_like_archive: {
+        Row: {
+          created_at: string
+          id: string
+          source_listing_id: string
+          source_like_id: string
+          user_id: string
+          user_image: string | null
+          user_name: string
+        }
+        Insert: {
+          created_at: string
+          id?: string
+          source_listing_id: string
+          source_like_id: string
+          user_id: string
+          user_image?: string | null
+          user_name: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          source_listing_id?: string
+          source_like_id?: string
+          user_id?: string
+          user_image?: string | null
+          user_name?: string
+        }
+        Relationships: []
+      }
+      marketplace_listing_comment_archive: {
+        Row: {
+          body: string
+          created_at: string
+          id: string
+          image: string[] | null
+          source_comment_id: string
+          source_listing_id: string
+          user_id: string
+          user_image: string | null
+          user_name: string
+        }
+        Insert: {
+          body: string
+          created_at: string
+          id?: string
+          image?: string[] | null
+          source_comment_id: string
+          source_listing_id: string
+          user_id: string
+          user_image?: string | null
+          user_name: string
+        }
+        Update: {
+          body?: string
+          created_at?: string
+          id?: string
+          image?: string[] | null
+          source_comment_id?: string
+          source_listing_id?: string
+          user_id?: string
+          user_image?: string | null
+          user_name?: string
+        }
+        Relationships: []
       }
       marketplace_listing_comments: {
         Row: {
@@ -258,26 +442,38 @@ export type Database = {
       }
       message: {
         Row: {
+          attachments: Json | null
           body: string
           created_at: string
+          edited_at: string | null
           id: string
-          listing_id: string
+          listing_id: string | null
+          marketplace_order_id: string | null
+          read_at: string | null
           recipient_id: string
           sender_id: string
         }
         Insert: {
+          attachments?: Json | null
           body: string
           created_at?: string
+          edited_at?: string | null
           id?: string
-          listing_id: string
+          listing_id?: string | null
+          marketplace_order_id?: string | null
+          read_at?: string | null
           recipient_id: string
           sender_id: string
         }
         Update: {
+          attachments?: Json | null
           body?: string
           created_at?: string
+          edited_at?: string | null
           id?: string
-          listing_id?: string
+          listing_id?: string | null
+          marketplace_order_id?: string | null
+          read_at?: string | null
           recipient_id?: string
           sender_id?: string
         }
@@ -287,6 +483,13 @@ export type Database = {
             columns: ["listing_id"]
             isOneToOne: false
             referencedRelation: "marketplace_listing"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "message_marketplace_order_id_fkey"
+            columns: ["marketplace_order_id"]
+            isOneToOne: false
+            referencedRelation: "marketplace_orders"
             referencedColumns: ["id"]
           },
           {
@@ -344,6 +547,81 @@ export type Database = {
           },
         ]
       }
+      message_hidden_for: {
+        Row: {
+          created_at: string
+          message_id: string
+          profile_id: string
+        }
+        Insert: {
+          created_at?: string
+          message_id: string
+          profile_id: string
+        }
+        Update: {
+          created_at?: string
+          message_id?: string
+          profile_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "message_hidden_for_message_id_fkey"
+            columns: ["message_id"]
+            isOneToOne: false
+            referencedRelation: "message"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "message_hidden_for_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      message_conversation_preferences: {
+        Row: {
+          archived: boolean
+          created_at: string
+          deleted_before: string | null
+          partner_id: string
+          profile_id: string
+          updated_at: string
+        }
+        Insert: {
+          archived?: boolean
+          created_at?: string
+          deleted_before?: string | null
+          partner_id: string
+          profile_id: string
+          updated_at?: string
+        }
+        Update: {
+          archived?: boolean
+          created_at?: string
+          deleted_before?: string | null
+          partner_id?: string
+          profile_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "message_conversation_preferences_partner_id_fkey"
+            columns: ["partner_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "message_conversation_preferences_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       users: {
         Row: {
           about: string | null
@@ -388,10 +666,32 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      marketplace_listing_engagement_counts: {
+        Row: {
+          comment_count: number
+          like_count: number
+          listing_id: string
+        }
+        Relationships: []
+      }
     }
     Functions: {
-      [_ in never]: never
+      set_post_like: {
+        Args: {
+          requested_post_id: string
+          requested_profile_id: string
+          should_like: boolean
+        }
+        Returns: string[]
+      }
+      checkout_marketplace_listing: {
+        Args: {
+          requested_buyer_id: string
+          requested_listing_id: string
+          requested_quantity: number
+        }
+        Returns: Database["public"]["Tables"]["marketplace_orders"]["Row"]
+      }
     }
     Enums: {
       [_ in never]: never

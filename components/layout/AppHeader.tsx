@@ -22,6 +22,7 @@ import {
 import { Item, ItemContent, ItemMedia, ItemTitle } from "@/components/ui/item";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { ThemeToggle } from "@/components/theme/ThemeToggle";
+import { MessagingCenter } from "@/components/features/messaging/MessagingCenter";
 import { useProfile } from "@/context/ProfileContext";
 import { getInitials } from "@/lib/get-initials";
 import { HeaderUserSkeleton } from "@/components/shared/LoadingSkeletons";
@@ -121,6 +122,7 @@ export default function AppHeader({
         </div>
 
         <div className="ml-auto flex items-center justify-between gap-4 md:ml-0">
+          <MessagingCenter />
           <ThemeToggle />
           {isLoading ? (
             <div className="rounded-sm px-2 py-1">

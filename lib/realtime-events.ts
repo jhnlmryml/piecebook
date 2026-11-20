@@ -20,8 +20,43 @@ export type PiecebookRealtimeChange = {
 type RealtimeListener = (change: PiecebookRealtimeChange) => void;
 
 const listeners = new Set<RealtimeListener>();
+let crossTabChannel: BroadcastChannel | null = null;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isRealtimeChange(value: unknown): value is PiecebookRealtimeChange {
+  if (
+    !isRecord(value) ||
+    !isRecord(value.newRecord) ||
+    !isRecord(value.oldRecord)
+  ) {
+    return false;
+  }
+  return (
+    REALTIME_TABLES.some((table) => table === value.table) &&
+    (value.eventType === "INSERT" ||
+      value.eventType === "UPDATE" ||
+      value.eventType === "DELETE")
+  );
+}
+
+function getCrossTabChannel() {
+  if (typeof window === "undefined" || typeof BroadcastChannel === "undefined") {
+    return null;
+  }
+  if (!crossTabChannel) {
+    crossTabChannel = new BroadcastChannel("piecebook-realtime");
+    crossTabChannel.addEventListener("message", (event: MessageEvent<unknown>) => {
+      if (isRealtimeChange(event.data)) publishRealtimeChange(event.data);
+    });
+  }
+  return crossTabChannel;
+}
 
 export function subscribeToRealtimeChanges(listener: RealtimeListener) {
+  getCrossTabChannel();
   listeners.add(listener);
   return () => {
     listeners.delete(listener);
@@ -30,4 +65,8 @@ export function subscribeToRealtimeChanges(listener: RealtimeListener) {
 
 export function publishRealtimeChange(change: PiecebookRealtimeChange) {
   for (const listener of listeners) listener(change);
+}
+
+export function broadcastRealtimeChange(change: PiecebookRealtimeChange) {
+  getCrossTabChannel()?.postMessage(change);
 }

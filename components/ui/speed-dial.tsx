@@ -7,7 +7,7 @@ import { useMergedRefs } from "@base-ui/utils/useMergedRefs";
 import { useRefWithInit } from "@base-ui/utils/useRefWithInit";
 import { useValueAsRef } from "@base-ui/utils/useValueAsRef";
 import { cva, type VariantProps } from "class-variance-authority";
-import { cn } from "cn";
+import { cn } from "@/lib/utils";
 import * as React from "react";
 
 import { Button } from "@/components/ui/button";

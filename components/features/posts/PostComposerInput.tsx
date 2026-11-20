@@ -2,10 +2,10 @@
 
 import type {
   DragEventHandler,
-  FormEventHandler,
   FormHTMLAttributes,
   KeyboardEventHandler,
   ReactNode,
+  SubmitEventHandler,
 } from "react";
 import { useState } from "react";
 import { ImagePlusIcon, Loader2, Send, Upload, X } from "lucide-react";
@@ -50,7 +50,7 @@ type PostComposerInputProps = {
   canSubmit: boolean;
   isSubmitting: boolean;
   onChange: (value: string) => void;
-  onSubmit: FormEventHandler<HTMLFormElement>;
+  onSubmit: SubmitEventHandler<HTMLFormElement>;
   fileUpload?: ComposerFileUploadOptions;
   header?: ReactNode;
   overlay?: ReactNode;
@@ -65,10 +65,12 @@ type PostComposerInputProps = {
   submitButtonClassName?: string;
   submitButtonSize?: "default" | "icon" | "icon-lg";
   submitLabel?: string;
+  submitIcon?: ReactNode;
   submitAriaLabel?: string;
   showCharacterCount?: boolean;
   isDraggingOver?: boolean;
   textareaRows?: number;
+  preserveMultiline?: boolean;
   textareaKeyDown?: KeyboardEventHandler<HTMLTextAreaElement>;
   textareaDragOver?: DragEventHandler<HTMLTextAreaElement>;
   textareaDrop?: DragEventHandler<HTMLTextAreaElement>;
@@ -79,12 +81,13 @@ type PostComposerInputProps = {
 };
 
 const POST_FORM_CLASS =
-  "piecebook-card-surface relative flex w-full min-w-0 max-h-60 shrink-0 flex-col overflow-hidden rounded-sm border shadow-none";
-const POST_CONTENT_CLASS = "relative flex min-h-0 flex-1 gap-3 p-2 sm:p-3";
+  "piecebook-card-surface relative flex w-full min-w-0 max-h-60 shrink-0 flex-col overflow-hidden rounded-2xl border p-1 shadow-sm transition-colors hover:border-primary/30 focus-within:border-primary/50 focus-within:ring-2 focus-within:ring-primary/15";
+const POST_CONTENT_CLASS =
+  "relative flex min-h-0 min-w-0 flex-1 flex-col gap-2 p-2 sm:p-3";
 const POST_FIELD_CLASS =
-  "relative flex min-h-0 min-w-0 flex-1 flex-col gap-1.5 overflow-hidden rounded-md border border-input bg-background px-3 py-1.5 outline-none focus-within:ring-1 focus-within:ring-ring/50";
+  "relative flex min-h-0 min-w-0 flex-1 flex-col gap-1.5 overflow-hidden rounded-xl bg-muted/35 px-2 py-1";
 const POST_TEXTAREA_CLASS =
-  "field-sizing-fixed min-h-20 max-h-32 w-full flex-1 resize-none overflow-y-auto border-0 bg-transparent p-0 text-sm shadow-none scrollbar-hide select-text focus-visible:ring-0 dark:bg-transparent";
+  "field-sizing-content min-h-20 max-h-32 w-full min-w-0 flex-1 resize-none overflow-y-auto whitespace-pre-wrap border-0 bg-transparent px-1 py-2 text-sm leading-6 shadow-none scrollbar-hide select-text focus-visible:ring-0 dark:bg-transparent";
 const COMMENT_FORM_CLASS =
   "piecebook-card-surface relative flex w-full min-w-0 flex-col overflow-visible rounded-2xl border p-1 shadow-sm transition-colors hover:border-primary/30 focus-within:border-primary/50 focus-within:ring-2 focus-within:ring-primary/15";
 const COMMENT_CONTENT_CLASS = "relative flex min-w-0 flex-1 items-center";
@@ -125,10 +128,12 @@ export function PostComposerInput({
   submitButtonClassName,
   submitButtonSize = "icon-lg",
   submitLabel,
+  submitIcon,
   submitAriaLabel,
   showCharacterCount = false,
   isDraggingOver = false,
   textareaRows = 1,
+  preserveMultiline = false,
   textareaKeyDown,
   textareaDragOver,
   textareaDrop,
@@ -167,7 +172,7 @@ export function PostComposerInput({
     footerClassName ??
     (variant === "comment"
       ? "flex shrink-0 items-center justify-end"
-      : "flex items-center justify-between pt-1");
+      : "flex shrink-0 items-center justify-between");
   const resolvedActionsClassName =
     actionsClassName ??
     (variant === "comment"
@@ -242,7 +247,7 @@ export function PostComposerInput({
                 </p>
                 <p className="text-xs text-muted-foreground">
                   {fileUpload.dropzoneDescription ??
-                    `Up to ${fileUpload.maxFiles} photos, max 5MB each`}
+                    `Up to ${fileUpload.maxFiles} files, max ${fileUpload.maxSize / 1024 / 1024} MB each`}
                 </p>
               </div>
             </div>
@@ -297,7 +302,9 @@ export function PostComposerInput({
               const nextValue = event.target.value.slice(0, maxLength);
               onChange(
                 variant === "comment"
-                  ? nextValue.replace(/[\r\n]+/g, " ")
+                    ? preserveMultiline
+                      ? nextValue
+                      : nextValue.replace(/[\r\n]+/g, " ")
                   : nextValue,
               );
             }}
@@ -327,7 +334,11 @@ export function PostComposerInput({
                       size="icon"
                       variant="ghost"
                       aria-label={fileUpload.attachmentLabel ?? "Attach photo"}
-                      className={variant === "comment" ? "size-8 rounded-full" : "size-7"}
+                      className={
+                        variant === "comment" || fileUpload
+                          ? "size-8 rounded-full"
+                          : "size-7"
+                      }
                       {...props}
                     >
                       <ImagePlusIcon className="size-3.5" />
@@ -351,7 +362,7 @@ export function PostComposerInput({
                 {isSubmitting ? (
                   <Loader2 className="size-4 animate-spin" />
                 ) : (
-                  <Send className="size-4" />
+                  submitIcon ?? <Send className="size-4" />
                 )}
                 {!submitLabel && submitAriaLabel && (
                   <span className="sr-only">{submitAriaLabel}</span>
@@ -386,7 +397,7 @@ export function PostComposerInput({
         onDragOver={handleDropzoneDragOver}
         onDragLeave={handleDropzoneDragLeave}
         onDrop={handleDropzoneDrop}
-        className="group relative w-full min-w-0 items-stretch justify-start border-0 p-0 hover:bg-transparent data-[dragging]:border-0 data-[dragging]:bg-transparent"
+        className="group relative w-full min-w-0 items-stretch justify-start border-0 p-0 hover:bg-transparent data-dragging:border-0 data-dragging:bg-transparent"
       >
         {form}
       </FileUploadDropzone>

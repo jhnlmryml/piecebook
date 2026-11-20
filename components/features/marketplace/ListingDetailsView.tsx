@@ -10,6 +10,7 @@ import {
   ChevronUp,
   ImageOff,
   MessageCircle,
+  ShoppingBag,
 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -38,7 +39,7 @@ export function ListingPhotoGallery({
   const images = (photos?.length ? photos : listing.photos?.length ? listing.photos : [listing.image]).filter(Boolean);
   if (images.length === 0) {
     return (
-      <div className={`relative flex min-h-[300px] flex-col items-center justify-center gap-2 overflow-hidden bg-muted text-muted-foreground ${className}`} role="img" aria-label={`${listing.title}: no photos added`}>
+      <div className={`relative flex min-h-75 flex-col items-center justify-center gap-2 overflow-hidden bg-muted text-muted-foreground ${className}`} role="img" aria-label={`${listing.title}: no photos added`}>
         <ImageOff className="size-10" aria-hidden="true" />
         <span className="text-sm font-medium">No photos added</span>
       </div>
@@ -55,7 +56,7 @@ export function ListingPhotoGallery({
   };
 
   return (
-    <div className={`relative flex min-h-[300px] items-center justify-center overflow-hidden bg-[#111318] ${className}`}>
+    <div className={`relative flex min-h-75 items-center justify-center overflow-hidden bg-code-surface ${className}`}>
       <Image
         loader={passthroughImageLoader}
         src={activeImage}
@@ -73,7 +74,7 @@ export function ListingPhotoGallery({
           <Button type="button" variant="secondary" size="icon" aria-label="Next photo" onClick={() => selectImage(activeIndex + 1)} className="absolute right-3 top-1/2 size-10 -translate-y-1/2 rounded-full bg-card shadow-md">
             <ChevronRight className="size-5" />
           </Button>
-          <div className="absolute inset-x-0 bottom-0 flex justify-center gap-2 bg-gradient-to-t from-black/65 to-transparent px-4 pb-4 pt-8">
+          <div className="absolute inset-x-0 bottom-0 flex justify-center gap-2 bg-linear-to-t from-black/65 to-transparent px-4 pb-4 pt-8">
             {images.map((photo, index) => (
               <button
                 key={`${listing.id}-photo-${index}`}
@@ -99,7 +100,9 @@ type ListingDetailsPanelProps = {
   onSave?: () => void;
   onMessage?: () => void;
   onViewMessages?: () => void;
+  onCheckout?: () => void;
   priceLabel?: string;
+  showListed?: boolean;
   className?: string;
 };
 
@@ -109,7 +112,9 @@ export function ListingDetailsPanel({
   onSave,
   onMessage,
   onViewMessages,
+  onCheckout,
   priceLabel,
+  showListed = true,
   className = "",
 }: ListingDetailsPanelProps) {
   const { currentUser, isLoading } = useProfile();
@@ -117,7 +122,7 @@ export function ListingDetailsPanel({
   const isOwnListing = isOwnMarketplaceListing(listing, currentUser?.id);
   const canUseSellerActions = !isLoading && Boolean(currentUser) && !isOwnListing;
   const sellerName = isOwnListing ? currentUser?.full_name ?? "You" : listing.seller;
-  const sellerImage = isOwnListing ? currentUser?.image : undefined;
+  const sellerImage = isOwnListing ? currentUser?.image : listing.sellerImage ?? undefined;
   const categoryDetails = Object.entries(listing.categoryDetails ?? {}).filter(([, value]) => value.trim());
   const detailKeys = new Set(categoryDetails.map(([label]) => label.toLowerCase()));
   const additionalDetails = [
@@ -130,11 +135,14 @@ export function ListingDetailsPanel({
     <section className={`flex min-h-0 flex-col overflow-y-auto p-4 sm:p-5 ${className}`} aria-label="Listing details">
       <header>
         <h1 className="text-lg font-bold leading-tight sm:text-xl">{listing.title}</h1>
+        <span className={`mt-2 inline-flex rounded-full px-2.5 py-1 text-xs font-semibold capitalize ${listing.status === "available" ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-400/15 dark:text-emerald-300" : listing.status === "pending" ? "bg-amber-100 text-amber-800 dark:bg-amber-400/15 dark:text-amber-300" : "bg-muted text-muted-foreground"}`}>
+          {listing.status}
+        </span>
         <div className="mt-1 flex items-baseline gap-2">
           <p className="text-lg font-semibold">{priceLabel ?? formatPrice(listing.price)}</p>
           {listing.previousPrice != null && <p className="text-sm text-muted-foreground line-through">{formatPrice(listing.previousPrice)}</p>}
         </div>
-        <p className="mt-1 text-xs text-muted-foreground">Listed {listing.listed}</p>
+        {showListed && <p className="mt-1 text-xs text-muted-foreground">Listed {listing.listed}</p>}
       </header>
 
       {canUseSellerActions && (onMessage || onSave) && (
@@ -148,6 +156,16 @@ export function ListingDetailsPanel({
           <MessageCircle className="size-4" />View messages
         </Button>
       )}
+      {listing.status === "available" && listing.quantity > 0 && (
+        <p className="mt-2 text-xs text-muted-foreground">
+          {listing.quantity} {listing.quantity === 1 ? "item" : "items"} available
+        </p>
+      )}
+      {onCheckout && (
+        <Button type="button" onClick={onCheckout} className="mt-3 h-10 w-full rounded-md font-semibold">
+          <ShoppingBag className="size-4" />Checkout
+        </Button>
+      )}
 
       <div className="mt-4 border-t border-border pt-3">
         <h2 className="text-sm font-bold">Details</h2>
@@ -155,7 +173,7 @@ export function ListingDetailsPanel({
           <div className="flex justify-between gap-4"><dt className="font-semibold">Category</dt><dd className="text-right text-muted-foreground">{listing.category}</dd></div>
           <div className="flex justify-between gap-4"><dt className="font-semibold">Condition</dt><dd className="text-right text-muted-foreground">{listing.condition}</dd></div>
         </dl>
-        {allCategoryDetails.length > 0 && <div className="mt-3 border-t border-border pt-3"><h3 className="text-sm font-semibold">Category details</h3><dl className="mt-2 space-y-2 text-sm">{allCategoryDetails.map(([label, value]) => <div key={label} className="flex justify-between gap-4"><dt className="shrink-0 font-medium">{label}</dt><dd className="min-w-0 break-words text-right text-muted-foreground">{value}</dd></div>)}</dl></div>}
+        {allCategoryDetails.length > 0 && <div className="mt-3 border-t border-border pt-3"><h3 className="text-sm font-semibold">Category details</h3><dl className="mt-2 space-y-2 text-sm">{allCategoryDetails.map(([label, value]) => <div key={label} className="flex justify-between gap-4"><dt className="shrink-0 font-medium">{label}</dt><dd className="min-w-0 wrap-break-word text-right text-muted-foreground">{value}</dd></div>)}</dl></div>}
         <div className="mt-3">
           <h3 className="text-sm font-semibold">Description</h3>
           <p className={`mt-1 whitespace-pre-wrap text-sm leading-relaxed ${isDescriptionExpanded ? "" : "line-clamp-4"}`}>{listing.description}</p>
@@ -205,7 +223,9 @@ export function ListingDetailsView({
   onSave,
   onMessage,
   onViewMessages,
+  onCheckout,
   priceLabel,
+  showListed,
   className,
   imageClassName,
   layoutClassName = "grid min-h-0 grid-cols-1 md:grid-cols-[minmax(0,1.1fr)_minmax(18rem,0.9fr)]",
@@ -213,7 +233,7 @@ export function ListingDetailsView({
   return (
     <div className={`${layoutClassName} ${className ?? ""}`}>
       <ListingPhotoGallery listing={listing} photos={photos} activeIndex={activeIndex} onActiveIndexChange={onActiveIndexChange} className={imageClassName} />
-      <ListingDetailsPanel listing={listing} isSaved={isSaved} onSave={onSave} onMessage={onMessage} onViewMessages={onViewMessages} priceLabel={priceLabel} />
+      <ListingDetailsPanel listing={listing} isSaved={isSaved} onSave={onSave} onMessage={onMessage} onViewMessages={onViewMessages} onCheckout={onCheckout} priceLabel={priceLabel} showListed={showListed} />
     </div>
   );
 }

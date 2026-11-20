@@ -8,7 +8,7 @@ import AppShell from "@/components/layout/AppShell";
 
 export const metadata: Metadata = {
   title: {
-    default: "Piecebook — Your Wall",
+    default: "Piecebook @ JHNLMRYML",
     template: "%s | Piecebook",
   },
   description:
@@ -16,7 +16,7 @@ export const metadata: Metadata = {
   applicationName: "Piecebook",
   keywords: ["Piecebook", "social wall", "friends", "photos"],
   openGraph: {
-    title: "Piecebook — Your Wall",
+    title: "Piecebook @ JHNLMRYML",
     description:
       "A place for your friends, photos, and everyday updates — inspired by the original Facebook Wall.",
     type: "website",

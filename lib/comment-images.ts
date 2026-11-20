@@ -1,8 +1,13 @@
-import { getSupabaseClient } from "@/lib/supabase";
+import {
+  imageFileSchema,
+  IMAGE_MAX_COUNT,
+  IMAGE_MAX_SIZE,
+} from "@/lib/form-schemas";
+import { apiRequest, jsonRequest } from "@/lib/api-client";
 
 const COMMENT_IMAGE_BUCKET = "post-images";
-export const COMMENT_IMAGE_MAX_SIZE = 5 * 1024 * 1024;
-export const COMMENT_IMAGE_MAX_COUNT = 5;
+export const COMMENT_IMAGE_MAX_SIZE = IMAGE_MAX_SIZE;
+export const COMMENT_IMAGE_MAX_COUNT = IMAGE_MAX_COUNT;
 
 export type UploadedCommentImage = {
   path: string;
@@ -13,35 +18,27 @@ export async function uploadCommentImage(
   file: File,
   profileId: string,
 ): Promise<UploadedCommentImage> {
-  if (!file.type.toLowerCase().startsWith("image/")) {
-    throw new Error("Choose an image file.");
-  }
-  if (file.size > COMMENT_IMAGE_MAX_SIZE) {
-    throw new Error("Images must be 5 MB or smaller.");
+  const validation = imageFileSchema.safeParse(file);
+  if (!validation.success) {
+    throw new Error(validation.error.issues[0]?.message ?? "Choose a valid image.");
   }
 
-  const extension =
-    file.name
-      .split(".")
-      .pop()
-      ?.toLowerCase()
-      .replace(/[^a-z0-9]/g, "") || "img";
-  const path = `${profileId}/comments/${crypto.randomUUID()}.${extension}`;
-  const bucket = getSupabaseClient().storage.from(COMMENT_IMAGE_BUCKET);
-  const { error } = await bucket.upload(path, file, {
-    contentType: file.type,
-    upsert: false,
+  const formData = new FormData();
+  formData.append("ownerId", profileId);
+  formData.append("file", file);
+  return apiRequest<UploadedCommentImage>("uploads/comment", {
+    method: "POST",
+    body: formData,
   });
-  if (error) throw new Error(`Could not upload comment image: ${error.message}`);
-
-  return { path, url: bucket.getPublicUrl(path).data.publicUrl };
 }
 
 export async function removeCommentImage(path: string): Promise<void> {
-  const { error } = await getSupabaseClient()
-    .storage.from(COMMENT_IMAGE_BUCKET)
-    .remove([path]);
-  if (error) throw new Error(`Could not remove comment image: ${error.message}`);
+  const profileId = path.split("/")[0];
+  if (!profileId) throw new Error("The comment image path is invalid.");
+  await apiRequest<void>(
+    "uploads/comment",
+    jsonRequest("DELETE", { ownerId: profileId, paths: [path] }),
+  );
 }
 
 export async function removeCommentImages(
@@ -76,9 +73,8 @@ export async function removeCommentImages(
   );
 
   if (paths.length === 0) return;
-
-  const { error } = await getSupabaseClient()
-    .storage.from(COMMENT_IMAGE_BUCKET)
-    .remove(paths);
-  if (error) throw new Error(`Could not remove comment images: ${error.message}`);
+  await apiRequest<void>(
+    "uploads/comment",
+    jsonRequest("DELETE", { ownerId: profileId, paths }),
+  );
 }

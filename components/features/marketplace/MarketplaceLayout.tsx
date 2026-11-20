@@ -1,7 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { Bookmark, Plus, Tag } from "lucide-react";
+import { Bookmark, CircleDollarSign, Plus, ShoppingBag, Tag } from "lucide-react";
 import {
   Sidebar,
   SidebarContent,
@@ -23,11 +23,16 @@ import { MarketplaceNavigation } from "./MarketplaceNavigation";
 
 function MarketplaceSidebarFrame({ children }: { children: ReactNode }) {
   const { activeView, activeCategory } = useMarketplaceLayout();
-  const title = activeCategory ?? (activeView === "selling" ? "Selling" : activeView === "saved" ? "Buying" : "Marketplace");
+  const title = activeCategory ?? (
+    activeView === "selling" ? "Your listings" :
+    activeView === "saved" ? "Saved items" :
+    activeView === "purchases" ? "Purchase history" :
+    activeView === "sales" ? "Sales history" : "Marketplace"
+  );
 
   return (
-    <SidebarProvider className="!min-h-0 h-full flex-1 [--sidebar:var(--card)] [--sidebar-foreground:var(--foreground)] [--sidebar-accent:var(--muted)] [--sidebar-accent-foreground:var(--foreground)] [--sidebar-border:var(--border)] [--sidebar-ring:var(--ring)]">
-      <Sidebar collapsible="icon" aria-label="Marketplace navigation" className="shrink-0 border-r border-border bg-card text-foreground [--sidebar:var(--card)] [--sidebar-foreground:var(--foreground)] [--sidebar-accent:var(--muted)] [--sidebar-accent-foreground:var(--foreground)] [--sidebar-border:var(--border)] [--sidebar-ring:var(--ring)] max-md:!hidden md:!top-14 md:!bottom-0 md:!h-auto">
+    <SidebarProvider className="min-h-0! h-full flex-1 [--sidebar:var(--card)] [--sidebar-foreground:var(--foreground)] [--sidebar-accent:var(--muted)] [--sidebar-accent-foreground:var(--foreground)] [--sidebar-border:var(--border)] [--sidebar-ring:var(--ring)]">
+      <Sidebar collapsible="icon" aria-label="Marketplace navigation" className="shrink-0 border-r border-border bg-card text-foreground [--sidebar:var(--card)] [--sidebar-foreground:var(--foreground)] [--sidebar-accent:var(--muted)] [--sidebar-accent-foreground:var(--foreground)] [--sidebar-border:var(--border)] [--sidebar-ring:var(--ring)] max-md:hidden! md:top-14! md:bottom-0! md:h-auto!">
         <SidebarHeader className="shrink-0 px-3 pb-2 pt-4 group-data-[collapsible=icon]:items-center group-data-[collapsible=icon]:px-0">
           <div className="flex w-full items-start justify-between gap-2 group-data-[collapsible=icon]:justify-center">
             <div className="min-w-0 px-1 group-data-[collapsible=icon]:hidden">
@@ -82,13 +87,33 @@ function MarketplaceMobileSpeedDial() {
           </SpeedDialAction>
         </SpeedDialItem>
         <SpeedDialItem >
-          <SpeedDialLabel  className={`bg-accent ${activeView === "selling" ? "text-primary" : undefined}`}>Selling</SpeedDialLabel>
+          <SpeedDialLabel  className={`bg-accent ${activeView === "selling" ? "text-primary" : undefined}`}>Manage your listings</SpeedDialLabel>
           <SpeedDialAction
-            aria-label="Selling"
+            aria-label="Manage your listings"
             onSelect={() => chooseView("selling")}
             className={activeView === "selling" ? "text-primary" : undefined}
           >
             <Tag />
+          </SpeedDialAction>
+        </SpeedDialItem>
+        <SpeedDialItem>
+          <SpeedDialLabel className={`bg-accent ${activeView === "purchases" ? "text-primary" : undefined}`}>Purchase history</SpeedDialLabel>
+          <SpeedDialAction
+            aria-label="Purchase history"
+            onSelect={() => chooseView("purchases")}
+            className={activeView === "purchases" ? "text-primary" : undefined}
+          >
+            <ShoppingBag />
+          </SpeedDialAction>
+        </SpeedDialItem>
+        <SpeedDialItem>
+          <SpeedDialLabel className={`bg-accent ${activeView === "sales" ? "text-primary" : undefined}`}>Sales history</SpeedDialLabel>
+          <SpeedDialAction
+            aria-label="Sales history"
+            onSelect={() => chooseView("sales")}
+            className={activeView === "sales" ? "text-primary" : undefined}
+          >
+            <CircleDollarSign />
           </SpeedDialAction>
         </SpeedDialItem>
       </SpeedDialContent>

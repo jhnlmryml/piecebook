@@ -4,7 +4,7 @@ import { mergeProps } from "@base-ui/react/merge-props";
 import { useRender } from "@base-ui/react/use-render";
 import { useRefWithInit } from "@base-ui/utils/useRefWithInit";
 import { useValueAsRef } from "@base-ui/utils/useValueAsRef";
-import { cn } from "cn";
+import { cn } from "@/lib/utils";
 import Image from "next/image";
 import * as React from "react";
 

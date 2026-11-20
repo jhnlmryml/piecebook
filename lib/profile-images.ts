@@ -1,45 +1,39 @@
-import { getSupabaseClient } from "@/lib/supabase";
+import { IMAGE_MAX_SIZE, profileImageFileSchema } from "@/lib/form-schemas";
+import { apiRequest, jsonRequest } from "@/lib/api-client";
 
-const PROFILE_IMAGE_BUCKET = "profile-images";
-export const PROFILE_IMAGE_MAX_SIZE = 5 * 1024 * 1024;
+export const PROFILE_IMAGE_MAX_SIZE = IMAGE_MAX_SIZE;
 
 export async function uploadProfileImage(file: File, profileId: string) {
-  if (!file.type.toLowerCase().startsWith("image/")) {
-    throw new Error("Choose an image file.");
-  }
-  if (file.size > PROFILE_IMAGE_MAX_SIZE) {
-    throw new Error("Profile images must be 5 MB or smaller.");
+  const validation = profileImageFileSchema.safeParse(file);
+  if (!validation.success) {
+    throw new Error(
+      validation.error.issues[0]?.message ?? "Choose a valid profile image.",
+    );
   }
 
-  const extension =
-    file.name
-      .split(".")
-      .pop()
-      ?.toLowerCase()
-      .replace(/[^a-z0-9]/g, "") || "img";
-  const path = `${profileId}/avatars/${crypto.randomUUID()}.${extension}`;
-  const bucket = getSupabaseClient().storage.from(PROFILE_IMAGE_BUCKET);
-  const { error } = await bucket.upload(path, file, {
-    contentType: file.type,
-    upsert: false,
+  const formData = new FormData();
+  formData.append("ownerId", profileId);
+  formData.append("file", file);
+  return apiRequest<{ path: string; url: string }>("uploads/profile", {
+    method: "POST",
+    body: formData,
   });
-  if (error) throw new Error(`Could not upload profile image: ${error.message}`);
-
-  return { path, url: bucket.getPublicUrl(path).data.publicUrl };
 }
 
 export async function removeProfileImage(path: string): Promise<void> {
-  const { error } = await getSupabaseClient()
-    .storage.from(PROFILE_IMAGE_BUCKET)
-    .remove([path]);
-  if (error) throw new Error(`Could not remove profile image: ${error.message}`);
+  const profileId = path.split("/")[0];
+  if (!profileId) throw new Error("The profile image path is invalid.");
+  await apiRequest<void>(
+    "uploads/profile",
+    jsonRequest("DELETE", { ownerId: profileId, paths: [path] }),
+  );
 }
 
 export function getOwnedProfileImagePath(
   imageUrl: string,
   profileId: string,
 ): string | null {
-  const bucketMarker = `/storage/v1/object/public/${PROFILE_IMAGE_BUCKET}/`;
+  const bucketMarker = "/storage/v1/object/public/profile-images/";
   const markerIndex = imageUrl.indexOf(bucketMarker);
   if (markerIndex < 0) return null;
 

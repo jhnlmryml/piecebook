@@ -1,4 +1,5 @@
-import { getSupabaseClient } from "@/lib/supabase";
+import { apiRequest, jsonRequest } from "@/lib/api-client";
+import { profileFieldsSchema } from "@/lib/form-schemas";
 import type { Tables, TablesUpdate } from "@/types/supabase";
 import type { UserProfile } from "@/types/user-profile";
 
@@ -6,6 +7,7 @@ type UserRow = Pick<
   Tables<"users">,
   | "id"
   | "full_name"
+  | "email"
   | "role"
   | "birthdate"
   | "location"
@@ -18,6 +20,7 @@ type UserRow = Pick<
 export type UserProfileFields = Pick<
   UserProfile,
   | "full_name"
+  | "email"
   | "role"
   | "birthdate"
   | "location"
@@ -27,15 +30,11 @@ export type UserProfileFields = Pick<
   | "image"
 >;
 
-const PROFILE_COLUMNS =
-  "id,full_name,role,birthdate,location,interests,dream,about,image,created_at";
-const PROFILE_COLUMNS_WITHOUT_IMAGE =
-  "id,full_name,role,birthdate,location,interests,dream,about,created_at";
-
 function toUserProfile(row: UserRow): UserProfile {
   return {
     id: row.id,
     full_name: row.full_name?.trim() || "Piecebook member",
+    email: row.email?.trim() || "",
     role: row.role?.trim() || "Member",
     birthdate: row.birthdate?.trim() || "",
     location: row.location?.trim() || "",
@@ -48,34 +47,8 @@ function toUserProfile(row: UserRow): UserProfile {
 }
 
 export async function getUserProfiles(): Promise<UserProfile[]> {
-  const supabase = getSupabaseClient();
-  const withImage = await supabase
-    .from("users")
-    .select(PROFILE_COLUMNS)
-    .order("full_name", { ascending: true });
-
-  if (!withImage.error) return withImage.data.map(toUserProfile);
-  if (
-    !(
-      withImage.error.code === "42703" ||
-      withImage.error.code === "PGRST204" ||
-      /column users\.image.*does not exist|image.*schema cache/i.test(
-        withImage.error.message,
-      )
-    )
-  ) {
-    throw new Error(`Could not load profiles: ${withImage.error.message}`);
-  }
-
-  const withoutImage = await supabase
-    .from("users")
-    .select(PROFILE_COLUMNS_WITHOUT_IMAGE)
-    .order("full_name", { ascending: true });
-
-  if (withoutImage.error) {
-    throw new Error(`Could not load profiles: ${withoutImage.error.message}`);
-  }
-  return withoutImage.data.map(toUserProfile);
+  const rows = await apiRequest<UserRow[]>("profiles");
+  return rows.map(toUserProfile);
 }
 
 export async function saveUserProfile({
@@ -85,14 +58,16 @@ export async function saveUserProfile({
   profileId: string;
   fields: UserProfileFields;
 }): Promise<UserProfile> {
-  const values: TablesUpdate<"users"> = fields;
-  const { data, error } = await getSupabaseClient()
-    .from("users")
-    .update(values)
-    .eq("id", profileId)
-    .select(PROFILE_COLUMNS)
-    .single();
-
-  if (error) throw new Error(`Could not save profile: ${error.message}`);
+  const validation = profileFieldsSchema.safeParse(fields);
+  if (!validation.success) {
+    throw new Error(
+      validation.error.issues[0]?.message ?? "Profile details are invalid.",
+    );
+  }
+  const values: TablesUpdate<"users"> = validation.data;
+  const data = await apiRequest<UserRow>(
+    `profiles/${encodeURIComponent(profileId)}`,
+    jsonRequest("PATCH", values),
+  );
   return toUserProfile(data);
 }

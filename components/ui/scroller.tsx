@@ -4,7 +4,7 @@ import { mergeProps } from "@base-ui/react/merge-props";
 import { useRender } from "@base-ui/react/use-render";
 import { useMergedRefs } from "@base-ui/utils/useMergedRefs";
 import { cva, type VariantProps } from "class-variance-authority";
-import { cn } from "cn";
+import { cn } from "@/lib/utils";
 import * as React from "react";
 import { CaretUpIcon, CaretDownIcon, CaretLeftIcon, CaretRightIcon } from "@phosphor-icons/react";
 
@@ -18,27 +18,42 @@ const DATA_LEFT_RIGHT_SCROLL = "data-left-right-scroll";
 const scrollerVariants = cva("", {
   variants: {
     orientation: {
-      vertical: [
-        "overflow-y-auto",
-        "data-[top-scroll=true]:[mask-image:linear-gradient(0deg,#000_calc(100%_-_var(--scroll-shadow-size)),transparent)]",
-        "data-[bottom-scroll=true]:[mask-image:linear-gradient(180deg,#000_calc(100%_-_var(--scroll-shadow-size)),transparent)]",
-        "data-[top-bottom-scroll=true]:[mask-image:linear-gradient(#000,#000,transparent_0,#000_var(--scroll-shadow-size),#000_calc(100%_-_var(--scroll-shadow-size)),transparent)]",
-      ],
-      horizontal: [
-        "overflow-x-auto",
-        "data-[left-scroll=true]:[mask-image:linear-gradient(270deg,#000_calc(100%_-_var(--scroll-shadow-size)),transparent)]",
-        "data-[right-scroll=true]:[mask-image:linear-gradient(90deg,#000_calc(100%_-_var(--scroll-shadow-size)),transparent)]",
-        "data-[left-right-scroll=true]:[mask-image:linear-gradient(to_right,#000,#000,transparent_0,#000_var(--scroll-shadow-size),#000_calc(100%_-_var(--scroll-shadow-size)),transparent)]",
-      ],
+      vertical: "overflow-y-auto",
+      horizontal: "overflow-x-auto",
+    },
+    scrollShadows: {
+      true: "",
+      false: "",
     },
     hideScrollbar: {
       true: "[scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden",
       false: "",
     },
   },
+  compoundVariants: [
+    {
+      orientation: "vertical",
+      scrollShadows: true,
+      className: [
+        "data-[top-scroll=true]:[mask-image:linear-gradient(0deg,#000_calc(100%_-_var(--scroll-shadow-size)),transparent)]",
+        "data-[bottom-scroll=true]:[mask-image:linear-gradient(180deg,#000_calc(100%_-_var(--scroll-shadow-size)),transparent)]",
+        "data-[top-bottom-scroll=true]:[mask-image:linear-gradient(#000,#000,transparent_0,#000_var(--scroll-shadow-size),#000_calc(100%_-_var(--scroll-shadow-size)),transparent)]",
+      ],
+    },
+    {
+      orientation: "horizontal",
+      scrollShadows: true,
+      className: [
+        "data-[left-scroll=true]:[mask-image:linear-gradient(270deg,#000_calc(100%_-_var(--scroll-shadow-size)),transparent)]",
+        "data-[right-scroll=true]:[mask-image:linear-gradient(90deg,#000_calc(100%_-_var(--scroll-shadow-size)),transparent)]",
+        "data-[left-right-scroll=true]:[mask-image:linear-gradient(to_right,#000,#000,transparent_0,#000_var(--scroll-shadow-size),#000_calc(100%_-_var(--scroll-shadow-size)),transparent)]",
+      ],
+    },
+  ],
   defaultVariants: {
     orientation: "vertical",
     hideScrollbar: false,
+    scrollShadows: true,
   },
 });
 
@@ -56,6 +71,7 @@ interface ScrollerProps
   size?: number;
   offset?: number;
   withNavigation?: boolean;
+  navigationClassName?: string;
   scrollStep?: number;
   scrollTriggerMode?: "press" | "hover" | "click";
 }
@@ -64,6 +80,7 @@ function Scroller(props: ScrollerProps) {
   const {
     orientation = "vertical",
     hideScrollbar,
+    scrollShadows,
     className,
     size = 40,
     offset = 0,
@@ -71,6 +88,7 @@ function Scroller(props: ScrollerProps) {
     style,
     render,
     withNavigation = false,
+    navigationClassName,
     scrollTriggerMode = "press",
     ref,
     children,
@@ -129,9 +147,12 @@ function Scroller(props: ScrollerProps) {
         const scrollHeight = container.scrollHeight;
 
         if (withNavigation) {
+          const bottomPadding =
+            Number.parseFloat(window.getComputedStyle(container).paddingBottom) || 0;
           setScrollVisibility((prev) => {
             const newUp = scrollTop > offset;
-            const newDown = scrollTop + clientHeight < scrollHeight;
+            const newDown =
+              scrollTop + clientHeight + offset < scrollHeight - bottomPadding - 1;
 
             if (prev.up !== newUp || prev.down !== newDown) {
               return {
@@ -234,8 +255,10 @@ function Scroller(props: ScrollerProps) {
           key={direction}
           data-slot="scroll-button"
           direction={direction}
+          aria-label={`Scroll ${direction}`}
           onClick={scrollHandlers[direction]}
           triggerMode={scrollTriggerMode}
+          className={navigationClassName}
         />
       ));
   }, [
@@ -243,6 +266,7 @@ function Scroller(props: ScrollerProps) {
     scrollVisibility,
     scrollHandlers,
     scrollTriggerMode,
+    navigationClassName,
     withNavigation,
   ]);
 
@@ -253,7 +277,12 @@ function Scroller(props: ScrollerProps) {
         ref: composedRef,
         style: composedStyle,
         className: cn(
-          scrollerVariants({ orientation, hideScrollbar, className }),
+          scrollerVariants({
+            orientation,
+            hideScrollbar,
+            scrollShadows,
+            className,
+          }),
         ),
         children,
       },

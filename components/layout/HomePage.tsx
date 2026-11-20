@@ -154,7 +154,7 @@ export default function HomePage() {
                   className="overflow-hidden rounded-sm border border-border bg-background"
                 >
                   {/* Browser window */}
-                  <div className="overflow-hidden rounded-t-sm bg-[#111318]">
+                  <div className="overflow-hidden rounded-t-sm bg-code-surface">
 
                     {/* Browser toolbar */}
                     <div className="flex h-9 items-center gap-3 border-b border-white/10 px-3">
@@ -186,7 +186,7 @@ export default function HomePage() {
                     </div>
 
                     {"preview" in work && work.preview === "static" ? (
-                      <div className="flex aspect-video w-full flex-col items-center justify-center gap-1 bg-[#111318] text-center text-white">
+                      <div className="flex aspect-video w-full flex-col items-center justify-center gap-1 bg-code-surface text-center text-white">
                         <p className="text-xs font-semibold">Preview disabled</p>
                         {/* <p className="text-[10px] text-white/60">Open the project to play</p> */}
                       </div>

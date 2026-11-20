@@ -5,32 +5,26 @@ import {
   useEffect,
   useRef,
   useState,
-  type FormEvent,
+  type SubmitEvent,
 } from "react";
-import Image from "next/image";
 import {
-  ArrowUp,
   Loader2,
   MessageCircle,
-  Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Bubble, BubbleContent } from "@/components/ui/bubble";
-import { Button } from "@/components/ui/button";
 import {
-  Message,
-  MessageAvatar,
-  MessageContent,
-  MessageFooter,
-  MessageGroup,
-  MessageHeader,
-} from "@/components/ui/message";
+  commentDraftSchema,
+  COMMENT_MAX_LENGTH,
+  imageFileSchema,
+} from "@/lib/form-schemas";
 import { Scroller } from "@/components/ui/scroller";
-import { LocalDateTime } from "@/components/shared/LocalDateTime";
 import { useProfile } from "@/context/ProfileContext";
-import { getInitials } from "@/lib/get-initials";
 import { PostComposerInput } from "@/components/features/posts/PostComposerInput";
+import { CommentList } from "@/components/features/comments/CommentList";
+import {
+  compareComments,
+  scrollToCommentContentBottom,
+} from "@/lib/comment-utils";
 import { subscribeToRealtimeChanges } from "@/lib/realtime-events";
 import {
   createPostComment,
@@ -48,33 +42,6 @@ import {
   type UploadedCommentImage,
 } from "@/lib/comment-images";
 
-const COMMENT_LIMIT = 2000;
-
-function compareComments(
-  first: Pick<PostComment, "created_at" | "id">,
-  second: Pick<PostComment, "created_at" | "id">,
-) {
-  return (
-    new Date(first.created_at).getTime() -
-      new Date(second.created_at).getTime() ||
-    first.id.localeCompare(second.id)
-  );
-}
-
-function areCommentsGrouped(
-  first: PostComment | undefined,
-  second: PostComment | undefined,
-) {
-  return Boolean(
-    first &&
-      second &&
-      first.user_id === second.user_id &&
-      new Date(second.created_at).getTime() -
-        new Date(first.created_at).getTime() <=
-        5 * 60 * 1000,
-  );
-}
-
 export function PostComments({ postId }: { postId: string }) {
   const { currentUser, allUsers } = useProfile();
   const [hasLoaded, setHasLoaded] = useState(false);
@@ -84,6 +51,7 @@ export function PostComments({ postId }: { postId: string }) {
   const [imageFiles, setImageFiles] = useState<File[]>([]);
   const [comments, setComments] = useState<PostComment[]>([]);
   const [commentCount, setCommentCount] = useState<number | null>(null);
+  const [hasReachedOldestComment, setHasReachedOldestComment] = useState(false);
   const countRequestId = useRef(0);
   const loadRequestedRef = useRef(false);
   const knownCommentIds = useRef(new Set<string>());
@@ -93,10 +61,9 @@ export function PostComments({ postId }: { postId: string }) {
   const preserveScrollRef = useRef<{
     height: number;
     top: number;
-    stickToTop: boolean;
   } | null>(null);
   const [isLoadingOlder, setIsLoadingOlder] = useState(false);
-  const [isAtCommentTop, setIsAtCommentTop] = useState(true);
+  const isLoadingOlderRef = useRef(false);
   const [deletingCommentId, setDeletingCommentId] = useState<string | null>(null);
 
   const refreshCommentCount = useCallback(async () => {
@@ -143,6 +110,7 @@ export function PostComments({ postId }: { postId: string }) {
         return [...merged.values()].sort(compareComments);
       });
       setCommentCount((count) => count ?? loadedComments.length);
+      setHasReachedOldestComment(false);
       setHasLoaded(true);
     } catch (error) {
       loadRequestedRef.current = false;
@@ -167,15 +135,14 @@ export function PostComments({ postId }: { postId: string }) {
 
     const previousScroll = preserveScrollRef.current;
     if (previousScroll) {
-      scroller.scrollTop = previousScroll.stickToTop
-        ? 0
-        : previousScroll.top + (scroller.scrollHeight - previousScroll.height);
+      scroller.scrollTop =
+        previousScroll.top + (scroller.scrollHeight - previousScroll.height);
       preserveScrollRef.current = null;
       return;
     }
 
     if (scrollToLatestRef.current) {
-      scroller.scrollTop = scroller.scrollHeight;
+      scrollToCommentContentBottom(scroller);
       scrollToLatestRef.current = false;
     }
   }, [comments]);
@@ -222,12 +189,12 @@ export function PostComments({ postId }: { postId: string }) {
   async function loadOlderComments() {
     const oldestComment = comments[0];
     const scroller = commentScrollerRef.current;
-    if (!oldestComment || !scroller || isLoadingOlder) return;
+    if (!oldestComment || !scroller || isLoadingOlderRef.current) return;
 
+    isLoadingOlderRef.current = true;
     preserveScrollRef.current = {
       height: scroller.scrollHeight,
       top: scroller.scrollTop,
-      stickToTop: scroller.scrollTop <= 4,
     };
     setIsLoadingOlder(true);
     try {
@@ -235,6 +202,7 @@ export function PostComments({ postId }: { postId: string }) {
         created_at: oldestComment.created_at,
         id: oldestComment.id,
       });
+      if (olderComments.length === 0) setHasReachedOldestComment(true);
       for (const comment of olderComments) knownCommentIds.current.add(comment.id);
       setComments((current) => {
         const merged = new Map(current.map((comment) => [comment.id, comment]));
@@ -247,14 +215,25 @@ export function PostComments({ postId }: { postId: string }) {
         error instanceof Error ? error.message : "Could not load older comments.",
       );
     } finally {
+      isLoadingOlderRef.current = false;
       setIsLoadingOlder(false);
     }
   }
 
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
-    const body = draft.trim();
-    if ((!body && imageFiles.length === 0) || isSending) return;
+    if (isSending) return;
+    const validation = commentDraftSchema.safeParse({
+      body: draft,
+      imageFiles,
+    });
+    if (!validation.success) {
+      toast.error(
+        validation.error.issues[0]?.message ?? "Check your comment and try again.",
+      );
+      return;
+    }
+    const { body } = validation.data;
     if (!currentUser) {
       toast.error("Choose a profile before commenting.");
       return;
@@ -359,34 +338,24 @@ export function PostComments({ postId }: { postId: string }) {
 
   const displayedCommentCount = commentCount ?? (hasLoaded ? comments.length : 0);
   const hasOlderComments =
+    !hasReachedOldestComment &&
     comments.length > 0 &&
     (commentCount !== null
       ? comments.length < commentCount
       : comments.length >= POST_COMMENT_PAGE_SIZE);
-  const showOlderCommentsButton = hasOlderComments || !isAtCommentTop;
-
-  function handleOlderCommentsButton() {
-    const scroller = commentScrollerRef.current;
-    if (scroller && scroller.scrollTop > 4) {
-      scroller.scrollTo({ top: 0, behavior: "smooth" });
-      return;
-    }
-    if (hasOlderComments) void loadOlderComments();
-  }
-
   return (
     <>
       <span className="piecebook-muted-text inline-flex h-8 items-center gap-2 rounded-sm px-2 text-xs">
         <MessageCircle aria-hidden="true" className="size-4" />
         {displayedCommentCount > 0
-          ? `Comments · ${displayedCommentCount}`
+          ? `Comments ${displayedCommentCount}`
           : "Comment"}
       </span>
 
       <section
         id={`post-comments-${postId}`}
         aria-label="Comments"
-        className="basis-full w-full min-w-0"
+        className="basis-full w-full min-w-0 space-y-3"
       >
           {isLoading ? (
             <p className="piecebook-muted-text text-xs flex my-2 items-center justify-center "><Loader2 className="animate-spin" /> Loading comments</p>
@@ -394,145 +363,36 @@ export function PostComments({ postId }: { postId: string }) {
             <p className="piecebook-muted-text text-xs sr-only">No comments yet.</p>
           ) : (
             <>
-              {showOlderCommentsButton && (
-                <div className="mb-2 flex justify-center">
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    aria-label={
-                      isAtCommentTop && hasOlderComments
-                        ? "Load older comments"
-                        : "Scroll to older comments"
-                    }
-                    title={
-                      isAtCommentTop && hasOlderComments
-                        ? "Load older comments"
-                        : "Scroll to older comments"
-                    }
-                    disabled={isLoadingOlder}
-                    onClick={handleOlderCommentsButton}
-                    className="size-8 rounded-full"
-                  >
-                    <ArrowUp className="size-4" />
-                    <span className="sr-only">
-                      {isLoadingOlder
-                        ? "Loading older comments"
-                        : isAtCommentTop && hasOlderComments
-                          ? "Load older comments"
-                          : "Scroll to older comments"}
-                    </span>
-                  </Button>
-                </div>
-              )}
               <Scroller
+                scrollTriggerMode="press"
                 ref={commentScrollerRef}
-                onScroll={(event) =>
-                  setIsAtCommentTop(event.currentTarget.scrollTop <= 4)
-                }
-                className="mb-5 max-h-72 pr-2"
+                withNavigation
+                navigationClassName="left-auto right-2 translate-x-0 rounded-full bg-background/90 p-1 shadow-sm"
+                hideScrollbar
+                scrollShadows={false}
+                onScroll={(event) => {
+                  if (event.currentTarget.scrollTop <= 8 && hasOlderComments) {
+                    void loadOlderComments();
+                  }
+                }}
+                className="max-h-72 min-w-0 px-1 pt-2 pr-10 pb-6 sm:px-2 sm:pr-10"
               >
-                <MessageGroup role="list" className="gap-2">
-                  {comments.map((comment, index) => {
-                    const author = allUsers.find(
-                      (user) => user.id === comment.user_id,
-                    );
-                    const isOwnComment = comment.user_id === currentUser?.id;
-                    const isFirstInGroup = !areCommentsGrouped(
-                      comments[index - 1],
-                      comment,
-                    );
-                    const isLastInGroup = !areCommentsGrouped(
-                      comment,
-                      comments[index + 1],
-                    );
-                    return (
-                      <Message
-                        key={comment.id}
-                        role="listitem"
-                        align={isOwnComment ? "end" : "start"}
-                      >
-                        <MessageAvatar aria-hidden={!isFirstInGroup}>
-                          {isFirstInGroup ? (
-                            <Avatar className="size-8 shrink-0">
-                              {author?.image && (
-                                <AvatarImage
-                                  src={author.image}
-                                  alt={author.full_name}
-                                />
-                              )}
-                              <AvatarFallback className="piecebook-avatar-fallback text-[10px]">
-                                {author ? getInitials(author.full_name) : "?"}
-                              </AvatarFallback>
-                            </Avatar>
-                          ) : null}
-                        </MessageAvatar>
-                        <MessageContent className="gap-1">
-                          {isFirstInGroup && (
-                            <MessageHeader className="px-0 text-[11px] font-medium text-muted-foreground">
-                              {author?.full_name ?? "Piecebook member"}
-                            </MessageHeader>
-                          )}
-                          <Bubble variant={isOwnComment ? "default" : "muted"}>
-                            <BubbleContent className="rounded-2xl border-0 px-3 py-2 text-sm leading-relaxed">
-                              {comment.body && (
-                                <p className="whitespace-pre-wrap break-words">
-                                  {comment.body}
-                                </p>
-                              )}
-                              {comment.image?.map((imageUrl, index) => (
-                                <Image
-                                  key={`${comment.id}-${imageUrl}`}
-                                  src={imageUrl}
-                                  alt={`Image ${index + 1} attached to comment`}
-                                  width={560}
-                                  height={420}
-                                  unoptimized
-                                  className="mt-2 max-h-72 w-auto max-w-full rounded-sm object-contain"
-                                />
-                              ))}
-                            </BubbleContent>
-                          </Bubble>
-                          {(isLastInGroup || isOwnComment) && (
-                            <MessageFooter className="gap-1 px-0 text-[10px] font-normal text-muted-foreground/60">
-                              {isLastInGroup && (
-                                <LocalDateTime dateTime={comment.created_at} />
-                              )}
-                              {isOwnComment && (
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="icon-xs"
-                                  aria-label={
-                                    deletingCommentId === comment.id
-                                      ? "Deleting comment"
-                                      : "Delete your comment"
-                                  }
-                                  title="Delete comment"
-                                  disabled={deletingCommentId !== null}
-                                  onClick={() => void handleDeleteComment(comment)}
-                                  className="size-6 rounded-full text-muted-foreground/70 transition-opacity hover:text-destructive focus-visible:opacity-100 lg:opacity-0 lg:group-hover/message:opacity-100"
-                                >
-                                  {deletingCommentId === comment.id ? (
-                                    <Loader2
-                                      aria-hidden="true"
-                                      className="size-3.5 animate-spin"
-                                    />
-                                  ) : (
-                                    <Trash2
-                                      aria-hidden="true"
-                                      className="size-3.5"
-                                    />
-                                  )}
-                                </Button>
-                              )}
-                            </MessageFooter>
-                          )}
-                        </MessageContent>
-                      </Message>
-                    );
-                  })}
-                </MessageGroup>
+                {isLoadingOlder && (
+                  <p
+                    role="status"
+                    className="flex items-center justify-center gap-2 py-2 text-xs text-muted-foreground"
+                  >
+                    <Loader2 aria-hidden="true" className="size-3.5 animate-spin" />
+                    Loading older comments
+                  </p>
+                )}
+                <CommentList
+                  comments={comments}
+                  allUsers={allUsers}
+                  currentUserId={currentUser?.id}
+                  deletingCommentId={deletingCommentId}
+                  onDelete={handleDeleteComment}
+                />
               </Scroller>
             </>
           )}
@@ -541,7 +401,7 @@ export function PostComments({ postId }: { postId: string }) {
             variant="comment"
             id={"comment-" + postId}
             value={draft}
-            maxLength={COMMENT_LIMIT}
+            maxLength={COMMENT_MAX_LENGTH}
             placeholder="Write a comment…"
             disabled={!currentUser || isSending}
             canSubmit={
@@ -558,13 +418,11 @@ export function PostComments({ postId }: { postId: string }) {
               onFileReject: (file, reason) =>
                 toast.error(file.name + ": " + reason),
               onFileValidate: (file) => {
-                if (!file.type.toLowerCase().startsWith("image/")) {
-                  return "Choose an image file.";
-                }
-                if (file.size > COMMENT_IMAGE_MAX_SIZE) {
-                  return "Images must be 5 MB or smaller.";
-                }
-                return null;
+                const fileValidation = imageFileSchema.safeParse(file);
+                return fileValidation.success
+                  ? null
+                  : fileValidation.error.issues[0]?.message ??
+                      "Choose a valid image.";
               },
               accept: "image/*",
               maxFiles: COMMENT_IMAGE_MAX_COUNT,
@@ -572,7 +430,7 @@ export function PostComments({ postId }: { postId: string }) {
               multiple: true,
               attachmentLabel: "Attach image to comment",
               dropzoneTitle: "Drag & drop images here",
-              dropzoneDescription: `Up to ${COMMENT_IMAGE_MAX_COUNT} images, max 5MB each`,
+              dropzoneDescription: `Up to ${COMMENT_IMAGE_MAX_COUNT} images, max ${COMMENT_IMAGE_MAX_SIZE / 1024 / 1024} MB each`,
             }}
             submitButtonSize="icon-lg"
             submitAriaLabel="Send comment"

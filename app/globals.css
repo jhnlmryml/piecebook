@@ -30,6 +30,7 @@
   --color-header-foreground: var(--header-foreground);
   --color-search-background: var(--search-background);
   --color-search-foreground: var(--search-foreground);
+  --color-code-surface: var(--code-surface);
   --font-sans: Arial, Helvetica, sans-serif;
   --font-mono: "Courier New", monospace;
 }
@@ -60,6 +61,7 @@
   --header-foreground: #ffffff;
   --search-background: #ffffff;
   --search-foreground: #1c1e21;
+  --code-surface: #111318;
   --radius: 0.25rem;
 }
 
@@ -92,12 +94,6 @@
 
 * {
   box-sizing: border-box;
-  -ms-overflow-style: none;
-  scrollbar-width: none;
-}
-
-*::-webkit-scrollbar {
-  display: none;
 }
 
 body {

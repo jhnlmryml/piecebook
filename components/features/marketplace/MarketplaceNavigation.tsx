@@ -6,6 +6,7 @@ import {
   Bookmark,
   CarFront,
   Clapperboard,
+  CircleDollarSign,
   Gamepad2,
   Grid2x2,
   Guitar,
@@ -15,6 +16,7 @@ import {
   PackagePlus,
   Plus,
   Shirt,
+  ShoppingBag,
   Sparkles,
   Tag,
   Users,
@@ -64,8 +66,10 @@ const categoryIcons: Record<Category, LucideIcon> = {
 };
 
 const viewItems: { label: string; view: MarketplaceView; icon: LucideIcon }[] = [
-  { label: "Buying", view: "saved", icon: Bookmark },
-  { label: "Selling", view: "selling", icon: Tag },
+  { label: "Manage your listings", view: "selling", icon: Tag },
+  { label: "Saved items", view: "saved", icon: Bookmark },
+  { label: "Purchase history", view: "purchases", icon: ShoppingBag },
+  { label: "Sales history", view: "sales", icon: CircleDollarSign },
 ];
 
 export function MarketplaceNavigation() {
@@ -139,13 +143,15 @@ export function MarketplaceNavigation() {
                   type="button"
                   isActive={activeView === view}
                   onClick={() => selectView(view)}
-                  tooltip={`${label} · ${formatCount(view === "saved" ? savedListingIds.length : sellingCount)} items`}
-                  className={`h-10 gap-3 pr-8 text-sm group-data-[collapsible=icon]:p-0! group-data-[collapsible=icon]:justify-center! ${activeView === view ? "!bg-secondary !font-semibold !text-primary" : "hover:bg-muted"}`}
+                  tooltip={`${label}${view === "saved" || view === "selling" ? ` · ${formatCount(view === "saved" ? savedListingIds.length : sellingCount)} items` : ""}`}
+                  className={`h-10 gap-3 pr-8 text-sm group-data-[collapsible=icon]:p-0! group-data-[collapsible=icon]:justify-center! ${activeView === view ? "bg-secondary! font-semibold! text-primary!" : "hover:bg-muted"}`}
                 >
                  <Icon className="size-4" />
                   <span className="group-data-[collapsible=icon]:hidden">{label}</span>
                 </SidebarMenuButton>
-                <SidebarMenuBadge>{formatCount(view === "saved" ? savedListingIds.length : sellingCount)}</SidebarMenuBadge>
+                {(view === "saved" || view === "selling") && (
+                  <SidebarMenuBadge>{formatCount(view === "saved" ? savedListingIds.length : sellingCount)}</SidebarMenuBadge>
+                )}
               </SidebarMenuItem>
             ))}
           </SidebarMenu>
@@ -162,7 +168,7 @@ export function MarketplaceNavigation() {
         <SidebarGroupContent>
           <SidebarMenu>
             <SidebarMenuItem>
-              <SidebarMenuButton type="button" isActive={!activeCategory && activeView === "browse"} onClick={() => selectCategory(null)} tooltip={`All categories · ${formatCount(listings.length)} items`} className={`h-10 gap-3 pr-8 text-sm group-data-[collapsible=icon]:p-0! group-data-[collapsible=icon]:justify-center! ${!activeCategory && activeView === "browse" ? "!bg-secondary !font-semibold !text-primary" : "hover:bg-muted"}`}>
+              <SidebarMenuButton type="button" isActive={!activeCategory && activeView === "browse"} onClick={() => selectCategory(null)} tooltip={`All categories · ${formatCount(listings.length)} items`} className={`h-10 gap-3 pr-8 text-sm group-data-[collapsible=icon]:p-0! group-data-[collapsible=icon]:justify-center! ${!activeCategory && activeView === "browse" ? "bg-secondary! font-semibold! text-primary!" : "hover:bg-muted"}`}>
                 <Grid2x2 className="size-4" />
                 <span className="group-data-[collapsible=icon]:hidden">All categories</span>
               </SidebarMenuButton>
@@ -172,7 +178,7 @@ export function MarketplaceNavigation() {
               const Icon = categoryIcons[category];
               return (
                 <SidebarMenuItem key={category}>
-                  <SidebarMenuButton type="button" isActive={activeCategory === category} onClick={() => selectCategory(category)} tooltip={`${category} · ${formatCount(categoryCounts[category] ?? 0)} listings`} className={`h-10 gap-3 pr-8 text-sm group-data-[collapsible=icon]:p-0! group-data-[collapsible=icon]:justify-center! ${activeCategory === category ? "!bg-secondary !font-semibold !text-primary" : "hover:bg-muted"}`}>
+                  <SidebarMenuButton type="button" isActive={activeCategory === category} onClick={() => selectCategory(category)} tooltip={`${category} · ${formatCount(categoryCounts[category] ?? 0)} listings`} className={`h-10 gap-3 pr-8 text-sm group-data-[collapsible=icon]:p-0! group-data-[collapsible=icon]:justify-center! ${activeCategory === category ? "bg-secondary! font-semibold! text-primary!" : "hover:bg-muted"}`}>
                     <Icon className="size-4" />
                     <span className="group-data-[collapsible=icon]:hidden">{category}</span>
                   </SidebarMenuButton>

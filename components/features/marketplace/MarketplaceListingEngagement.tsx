@@ -1,30 +1,32 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
-import Image from "next/image";
 import {
-  ArrowUp,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type SubmitEvent,
+} from "react";
+import {
   Heart,
   Loader2,
   MessageCircle,
-  Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Bubble, BubbleContent } from "@/components/ui/bubble";
-import { Button } from "@/components/ui/button";
 import {
-  Message,
-  MessageAvatar,
-  MessageContent,
-  MessageFooter,
-  MessageGroup,
-  MessageHeader,
-} from "@/components/ui/message";
+  commentDraftSchema,
+  COMMENT_MAX_LENGTH,
+  imageFileSchema,
+} from "@/lib/form-schemas";
+import { Button } from "@/components/ui/button";
 import { Scroller } from "@/components/ui/scroller";
-import { LocalDateTime } from "@/components/shared/LocalDateTime";
 import { useProfile } from "@/context/ProfileContext";
-import { getInitials } from "@/lib/get-initials";
+import { CommentList } from "@/components/features/comments/CommentList";
+import {
+  compareComments,
+  scrollToCommentContentBottom,
+} from "@/lib/comment-utils";
+import type { ListingStatus } from "./marketplace-data";
 import { PostComposerInput } from "@/components/features/posts/PostComposerInput";
 import { subscribeToRealtimeChanges } from "@/lib/realtime-events";
 import {
@@ -36,6 +38,7 @@ import {
 import {
   createMarketplaceListingComment,
   deleteMarketplaceListingComment,
+  canEngageWithMarketplaceListing,
   getMarketplaceListingCommentsBefore,
   getMarketplaceListingEngagement,
   MARKETPLACE_LISTING_COMMENT_PAGE_SIZE,
@@ -44,57 +47,33 @@ import {
   type MarketplaceListingLike,
 } from "@/lib/marketplace-engagement";
 
-const COMMENT_LIMIT = 2000;
-
-function compareComments(
-  first: Pick<MarketplaceListingComment, "created_at" | "id">,
-  second: Pick<MarketplaceListingComment, "created_at" | "id">,
-) {
-  return (
-    new Date(first.created_at).getTime() -
-      new Date(second.created_at).getTime() ||
-    first.id.localeCompare(second.id)
-  );
-}
-
-function areCommentsGrouped(
-  first: MarketplaceListingComment | undefined,
-  second: MarketplaceListingComment | undefined,
-) {
-  return Boolean(
-    first &&
-      second &&
-      first.user_id === second.user_id &&
-      new Date(second.created_at).getTime() -
-        new Date(first.created_at).getTime() <=
-        5 * 60 * 1000,
-  );
-}
-
 export function MarketplaceListingEngagement({
   listingId,
+  listingStatus,
 }: {
   listingId: string;
+  listingStatus: ListingStatus;
 }) {
   const { currentUser, allUsers } = useProfile();
   const [comments, setComments] = useState<MarketplaceListingComment[]>([]);
   const [commentCount, setCommentCount] = useState(0);
+  const [hasReachedOldestComment, setHasReachedOldestComment] = useState(false);
   const [likeCount, setLikeCount] = useState(0);
   const [isLiked, setIsLiked] = useState(false);
+  const [serverAllowsEngagement, setServerAllowsEngagement] = useState(false);
   const [loadedEngagementKey, setLoadedEngagementKey] = useState<string | null>(null);
   const [isLiking, setIsLiking] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const [draft, setDraft] = useState("");
   const [imageFiles, setImageFiles] = useState<File[]>([]);
   const [isLoadingOlder, setIsLoadingOlder] = useState(false);
-  const [isAtCommentTop, setIsAtCommentTop] = useState(true);
+  const isLoadingOlderRef = useRef(false);
   const [deletingCommentId, setDeletingCommentId] = useState<string | null>(null);
   const commentScrollerRef = useRef<HTMLDivElement | null>(null);
   const scrollToLatestRef = useRef(false);
   const preserveScrollRef = useRef<{
     height: number;
     top: number;
-    stickToTop: boolean;
   } | null>(null);
   const refreshSequence = useRef(0);
   const liveChangeVersion = useRef(0);
@@ -105,6 +84,8 @@ export function MarketplaceListingEngagement({
   const profileId = currentUser?.id;
   const engagementKey = profileId ? `${listingId}:${profileId}` : null;
   const isLoading = Boolean(engagementKey && loadedEngagementKey !== engagementKey);
+  const canEngage =
+    listingStatus !== "pending" && serverAllowsEngagement;
 
   const refreshEngagement = useCallback(async () => {
     if (!profileId) return;
@@ -127,6 +108,7 @@ export function MarketplaceListingEngagement({
         knownCommentIdsRef.current.clear();
         deletedCommentIdsRef.current.clear();
         scrollToLatestRef.current = true;
+        setHasReachedOldestComment(false);
       }
       for (const comment of engagement.comments) {
         knownCommentIdsRef.current.add(comment.id);
@@ -141,6 +123,7 @@ export function MarketplaceListingEngagement({
       setCommentCount(engagement.commentCount);
       setLikeCount(engagement.likes.length);
       setIsLiked(engagement.isLiked);
+      setServerAllowsEngagement(engagement.canEngage);
       loadedEngagementKeyRef.current = nextKey;
       setLoadedEngagementKey(nextKey);
     } catch (error) {
@@ -250,7 +233,7 @@ export function MarketplaceListingEngagement({
       refreshSequence.current += 1;
       unsubscribe();
     };
-  }, [engagementKey, profileId, listingId, refreshEngagement]);
+  }, [engagementKey, listingStatus, profileId, listingId, refreshEngagement]);
 
   useEffect(() => {
     const scroller = commentScrollerRef.current;
@@ -258,26 +241,32 @@ export function MarketplaceListingEngagement({
 
     const previousScroll = preserveScrollRef.current;
     if (previousScroll) {
-      scroller.scrollTop = previousScroll.stickToTop
-        ? 0
-        : previousScroll.top + (scroller.scrollHeight - previousScroll.height);
+      scroller.scrollTop =
+        previousScroll.top + (scroller.scrollHeight - previousScroll.height);
       preserveScrollRef.current = null;
       return;
     }
 
     if (scrollToLatestRef.current) {
-      scroller.scrollTop = scroller.scrollHeight;
+      scrollToCommentContentBottom(scroller);
       scrollToLatestRef.current = false;
     }
   }, [comments]);
 
   async function handleLike() {
-    if (!currentUser || isLiking) return;
+    if (!currentUser || isLiking || !canEngage) return;
     setIsLiking(true);
     try {
+      const canEngage = await canEngageWithMarketplaceListing(listingId);
+      setServerAllowsEngagement(canEngage);
+      if (!canEngage) {
+        toast.error("This item no longer accepts likes.");
+        return;
+      }
       const nextLiked = await toggleMarketplaceListingLike(
         listingId,
         currentUser.id,
+        isLiked,
       );
       setIsLiked(nextLiked);
       await refreshEngagement();
@@ -290,14 +279,32 @@ export function MarketplaceListingEngagement({
     }
   }
 
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
-    const body = draft.trim();
-    if ((!body && imageFiles.length === 0) || !currentUser || isSending) return;
+    if (!currentUser || isSending || !canEngage) return;
+
+    const parsedDraft = commentDraftSchema.safeParse({
+      body: draft,
+      imageFiles,
+    });
+    if (!parsedDraft.success) {
+      toast.error(
+        parsedDraft.error.issues[0]?.message ??
+          "Check your comment and try again.",
+      );
+      return;
+    }
+    const { body } = parsedDraft.data;
 
     setIsSending(true);
     const uploadedImagePaths: string[] = [];
     try {
+      const canEngage = await canEngageWithMarketplaceListing(listingId);
+      setServerAllowsEngagement(canEngage);
+      if (!canEngage) {
+        throw new Error("This item no longer accepts comments.");
+      }
+
       let imageUrls: string[] = [];
       if (imageFiles.length > 0) {
         const uploadResults = await Promise.allSettled(
@@ -360,12 +367,12 @@ export function MarketplaceListingEngagement({
   async function loadOlderComments() {
     const oldestComment = comments[0];
     const scroller = commentScrollerRef.current;
-    if (!oldestComment || !scroller || isLoadingOlder) return;
+    if (!oldestComment || !scroller || isLoadingOlderRef.current) return;
 
+    isLoadingOlderRef.current = true;
     preserveScrollRef.current = {
       height: scroller.scrollHeight,
       top: scroller.scrollTop,
-      stickToTop: scroller.scrollTop <= 4,
     };
     setIsLoadingOlder(true);
     try {
@@ -373,6 +380,7 @@ export function MarketplaceListingEngagement({
         listingId,
         { created_at: oldestComment.created_at, id: oldestComment.id },
       );
+      if (olderComments.length === 0) setHasReachedOldestComment(true);
       for (const comment of olderComments) {
         knownCommentIdsRef.current.add(comment.id);
       }
@@ -387,6 +395,7 @@ export function MarketplaceListingEngagement({
         error instanceof Error ? error.message : "Could not load older comments.",
       );
     } finally {
+      isLoadingOlderRef.current = false;
       setIsLoadingOlder(false);
     }
   }
@@ -426,21 +435,11 @@ export function MarketplaceListingEngagement({
   }
 
   const hasOlderComments =
+    !hasReachedOldestComment &&
     comments.length > 0 &&
     (comments.length < commentCount ||
       (commentCount === 0 &&
         comments.length >= MARKETPLACE_LISTING_COMMENT_PAGE_SIZE));
-  const showOlderCommentsButton = hasOlderComments || !isAtCommentTop;
-
-  function handleOlderCommentsButton() {
-    const scroller = commentScrollerRef.current;
-    if (scroller && scroller.scrollTop > 4) {
-      scroller.scrollTo({ top: 0, behavior: "smooth" });
-      return;
-    }
-    if (hasOlderComments) void loadOlderComments();
-  }
-
   return (
     <section className="mt-4 rounded-sm border border-border bg-card p-4 sm:p-5" aria-label="Listing activity">
       <div className="flex flex-wrap items-center gap-2">
@@ -448,11 +447,19 @@ export function MarketplaceListingEngagement({
           type="button"
           variant={isLiked ? "secondary" : "outline"}
           aria-pressed={isLiked}
-          disabled={!currentUser || isLiking || isLoading}
+          disabled={!currentUser || isLiking || isLoading || !canEngage}
+          aria-busy={isLiking}
           onClick={() => void handleLike()}
           className="rounded-sm"
         >
-          <Heart className={`size-4 ${isLiked ? "fill-current text-rose-500" : ""}`} />
+          {isLiking ? (
+            <Loader2 aria-hidden="true" className="size-4 animate-spin" />
+          ) : (
+            <Heart
+              aria-hidden="true"
+              className={`size-4 ${isLiked ? "fill-current text-rose-500" : ""}`}
+            />
+          )}
           {isLiked ? "Liked" : "Like"}
           <span className="tabular-nums">{likeCount}</span>
         </Button>
@@ -466,191 +473,81 @@ export function MarketplaceListingEngagement({
         id={`listing-comments-${listingId}`}
         className="mt-4 space-y-4 border-t border-border pt-4"
       >
-          {isLoading ? (
-            <p className="text-sm text-muted-foreground">Loading listing activity…</p>
-          ) : comments.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No comments yet. Start the conversation.</p>
-          ) : (
-            <>
-              {showOlderCommentsButton && (
-                <div className="flex justify-center">
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    aria-label={
-                      isAtCommentTop && hasOlderComments
-                        ? "Load older comments"
-                        : "Scroll to older comments"
-                    }
-                    title={
-                      isAtCommentTop && hasOlderComments
-                        ? "Load older comments"
-                        : "Scroll to older comments"
-                    }
-                    disabled={isLoadingOlder}
-                    onClick={handleOlderCommentsButton}
-                    className="size-8 rounded-full"
-                  >
-                    <ArrowUp className="size-4" />
-                    <span className="sr-only">
-                      {isLoadingOlder
-                        ? "Loading older comments"
-                        : isAtCommentTop && hasOlderComments
-                          ? "Load older comments"
-                          : "Scroll to older comments"}
-                    </span>
-                  </Button>
-                </div>
+        {isLoading ? (
+          <p className="text-sm text-muted-foreground">Loading listing activity…</p>
+        ) : comments.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No comments yet. Start the conversation.</p>
+        ) : (
+          <>
+            <Scroller
+              ref={commentScrollerRef}
+              className="max-h-80 min-w-0 px-1 pt-5 pr-10 pb-6 sm:px-2 sm:pr-10"
+              navigationClassName="left-auto right-2 translate-x-0 rounded-full bg-background/90 p-1 shadow-sm"
+              hideScrollbar
+              withNavigation
+              scrollShadows={false}
+              scrollTriggerMode="press"
+              onScroll={(event) => {
+                if (event.currentTarget.scrollTop <= 8 && hasOlderComments) {
+                  void loadOlderComments();
+                }
+              }}
+            >
+              {isLoadingOlder && (
+                <p
+                  role="status"
+                  className="flex items-center justify-center gap-2 py-2 text-xs text-muted-foreground"
+                >
+                  <Loader2 aria-hidden="true" className="size-3.5 animate-spin" />
+                  Loading older comments
+                </p>
               )}
-              <Scroller
-                ref={commentScrollerRef}
-                onScroll={(event) =>
-                  setIsAtCommentTop(event.currentTarget.scrollTop <= 4)
-                }
-                className="max-h-72 pr-2"
-              >
-                <MessageGroup role="list" className="gap-2">
-                  {comments.map((comment, index) => {
-                    const author = allUsers.find(
-                      (user) => user.id === comment.user_id,
-                    );
-                    const isOwnComment = comment.user_id === currentUser?.id;
-                    const isFirstInGroup = !areCommentsGrouped(
-                      comments[index - 1],
-                      comment,
-                    );
-                    const isLastInGroup = !areCommentsGrouped(
-                      comment,
-                      comments[index + 1],
-                    );
-                    return (
-                      <Message
-                        key={comment.id}
-                        role="listitem"
-                        align={isOwnComment ? "end" : "start"}
-                      >
-                        <MessageAvatar aria-hidden={!isFirstInGroup}>
-                          {isFirstInGroup ? (
-                            <Avatar className="size-8 shrink-0">
-                              {author?.image && (
-                                <AvatarImage
-                                  src={author.image}
-                                  alt={author.full_name}
-                                />
-                              )}
-                              <AvatarFallback className="text-[10px]">
-                                {author ? getInitials(author.full_name) : "?"}
-                              </AvatarFallback>
-                            </Avatar>
-                          ) : null}
-                        </MessageAvatar>
-                        <MessageContent className="gap-1">
-                          {isFirstInGroup && (
-                            <MessageHeader className="px-0 text-[11px] font-medium text-muted-foreground">
-                              {author?.full_name ?? "Piecebook member"}
-                            </MessageHeader>
-                          )}
-                          <Bubble variant={isOwnComment ? "default" : "muted"}>
-                            <BubbleContent className="rounded-2xl border-0 px-3 py-2 text-sm leading-relaxed">
-                              {comment.body && (
-                                <p className="whitespace-pre-wrap break-words">
-                                  {comment.body}
-                                </p>
-                              )}
-                              {comment.image?.map((imageUrl, index) => (
-                                <Image
-                                  key={`${comment.id}-${imageUrl}`}
-                                  src={imageUrl}
-                                  alt={`Image ${index + 1} attached to listing comment`}
-                                  width={560}
-                                  height={420}
-                                  unoptimized
-                                  className="mt-2 max-h-72 w-auto max-w-full rounded-sm object-contain"
-                                />
-                              ))}
-                            </BubbleContent>
-                          </Bubble>
-                          {(isLastInGroup || isOwnComment) && (
-                            <MessageFooter className="gap-1 px-0 text-[10px] font-normal text-muted-foreground/60">
-                              {isLastInGroup && (
-                                <LocalDateTime dateTime={comment.created_at} />
-                              )}
-                              {isOwnComment && (
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="icon-xs"
-                                  aria-label={
-                                    deletingCommentId === comment.id
-                                      ? "Deleting comment"
-                                      : "Delete your comment"
-                                  }
-                                  title="Delete comment"
-                                  disabled={deletingCommentId !== null}
-                                  onClick={() => void handleDeleteComment(comment)}
-                                  className="size-6 rounded-full text-muted-foreground/70 transition-opacity hover:text-destructive focus-visible:opacity-100 lg:opacity-0 lg:group-hover/message:opacity-100"
-                                >
-                                  {deletingCommentId === comment.id ? (
-                                    <Loader2
-                                      aria-hidden="true"
-                                      className="size-3.5 animate-spin"
-                                    />
-                                  ) : (
-                                    <Trash2
-                                      aria-hidden="true"
-                                      className="size-3.5"
-                                    />
-                                  )}
-                                </Button>
-                              )}
-                            </MessageFooter>
-                          )}
-                        </MessageContent>
-                      </Message>
-                    );
-                  })}
-                </MessageGroup>
-              </Scroller>
-            </>
-          )}
+              <CommentList
+                comments={comments}
+                allUsers={allUsers}
+                currentUserId={currentUser?.id}
+                deletingCommentId={deletingCommentId}
+                onDelete={handleDeleteComment}
+                canDelete={canEngage}
+                imageDescription="listing comment"
+              />
+            </Scroller>
+          </>
+        )}
 
-          <PostComposerInput
-            variant="comment"
-            id={"marketplace-comment-" + listingId}
-            value={draft}
-            maxLength={COMMENT_LIMIT}
-            placeholder="Write a comment…"
-            disabled={!currentUser || isSending}
-            canSubmit={Boolean(draft.trim() || imageFiles.length > 0) && Boolean(currentUser) && !isSending}
-            isSubmitting={isSending}
-            onChange={setDraft}
-            onSubmit={handleSubmit}
-            fileUpload={{
-              value: imageFiles,
-              onValueChange: setImageFiles,
-              onFileReject: (file, reason) =>
-                toast.error(file.name + ": " + reason),
-              onFileValidate: (file) => {
-                if (!file.type.toLowerCase().startsWith("image/")) {
-                  return "Choose an image file.";
-                }
-                if (file.size > COMMENT_IMAGE_MAX_SIZE) {
-                  return "Images must be 5 MB or smaller.";
-                }
-                return null;
-              },
-              accept: "image/*",
-              maxFiles: COMMENT_IMAGE_MAX_COUNT,
-              maxSize: COMMENT_IMAGE_MAX_SIZE,
-              multiple: true,
-              attachmentLabel: "Attach image to listing comment",
-              dropzoneTitle: "Drag & drop images here",
-              dropzoneDescription: `Up to ${COMMENT_IMAGE_MAX_COUNT} images, max 5MB each`,
-            }}
-            submitButtonSize="icon-lg"
-            submitAriaLabel="Send listing comment"
-          />
+        {canEngage && <PostComposerInput
+          variant="comment"
+          id={"marketplace-comment-" + listingId}
+          value={draft}
+          maxLength={COMMENT_MAX_LENGTH}
+          placeholder="Write a comment…"
+          disabled={!currentUser || isLoading || isSending || !canEngage}
+          canSubmit={Boolean(draft.trim() || imageFiles.length > 0) && Boolean(currentUser) && !isLoading && canEngage && !isSending}
+          isSubmitting={isSending}
+          onChange={setDraft}
+          onSubmit={handleSubmit}
+          fileUpload={{
+            value: imageFiles,
+            onValueChange: setImageFiles,
+            onFileReject: (file, reason) =>
+              toast.error(file.name + ": " + reason),
+            onFileValidate: (file) => {
+              const validation = imageFileSchema.safeParse(file);
+              return validation.success
+                ? null
+                : validation.error.issues[0]?.message ?? "Choose a valid image.";
+            },
+            accept: "image/*",
+            maxFiles: COMMENT_IMAGE_MAX_COUNT,
+            maxSize: COMMENT_IMAGE_MAX_SIZE,
+            multiple: true,
+            attachmentLabel: "Attach image to listing comment",
+            dropzoneTitle: "Drag & drop images here",
+            dropzoneDescription: `Up to ${COMMENT_IMAGE_MAX_COUNT} images, max ${COMMENT_IMAGE_MAX_SIZE / 1024 / 1024} MB each`,
+          }}
+          submitButtonSize="icon-lg"
+          submitAriaLabel="Send listing comment"
+        />}
       </div>
     </section>
   );

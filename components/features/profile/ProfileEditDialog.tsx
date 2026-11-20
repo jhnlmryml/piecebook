@@ -1,9 +1,13 @@
 "use client";
 
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type SubmitEvent } from "react";
 import Image from "next/image";
 import { Loader2, Save, X } from "lucide-react";
 import { toast } from "sonner";
+import {
+  profileFieldsSchema,
+  profileImageFileSchema,
+} from "@/lib/form-schemas";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -38,6 +42,7 @@ type ValidationErrors = Partial<Record<ProfileFieldName | "imageFile", string>>;
 function profileFieldsFromUser(user: UserProfile): UserProfileFields {
   return {
     full_name: user.full_name,
+    email: user.email,
     role: user.role,
     birthdate: user.birthdate,
     location: user.location,
@@ -46,50 +51,6 @@ function profileFieldsFromUser(user: UserProfile): UserProfileFields {
     about: user.about,
     image: user.image,
   };
-}
-
-function validateProfileFields(fields: UserProfileFields): ValidationErrors {
-  const errors: ValidationErrors = {};
-  const fullName = fields.full_name.trim();
-  if (!fullName) errors.full_name = "Enter your name.";
-  else if (fullName.length > 80) errors.full_name = "Use 80 characters or fewer.";
-
-  const limits: Array<[ProfileFieldName, string, number]> = [
-    ["role", fields.role, 80],
-    ["location", fields.location, 120],
-    ["dream", fields.dream, 240],
-    ["about", fields.about, 1200],
-  ];
-  for (const [field, value, max] of limits) {
-    if (value.trim().length > max) errors[field] = `Use ${max} characters or fewer.`;
-  }
-
-  const birthdate = fields.birthdate.trim();
-  if (birthdate) {
-    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(birthdate);
-    const parsedBirthdate = match ? new Date(0) : null;
-    if (match && parsedBirthdate) {
-      parsedBirthdate.setHours(12, 0, 0, 0);
-      parsedBirthdate.setFullYear(
-        Number(match[1]),
-        Number(match[2]) - 1,
-        Number(match[3]),
-      );
-    }
-    if (
-      !match ||
-      !parsedBirthdate ||
-      parsedBirthdate.getFullYear() !== Number(match[1]) ||
-      parsedBirthdate.getMonth() !== Number(match[2]) - 1 ||
-      parsedBirthdate.getDate() !== Number(match[3])
-    ) {
-      errors.birthdate = "Choose a valid date.";
-    }
-  }
-
-  const interestsLength = fields.interests.join(", ").trim().length;
-  if (interestsLength > 400) errors.interests = "Keep interests under 400 characters.";
-  return errors;
 }
 
 export function ProfileEditDialog({ user }: { user: UserProfile }) {
@@ -139,12 +100,13 @@ export function ProfileEditDialog({ user }: { user: UserProfile }) {
 
   function handleImageChange(file?: File) {
     if (!file) return;
-    if (!file.type.toLowerCase().startsWith("image/")) {
-      setErrors((current) => ({ ...current, imageFile: "Choose a valid image file." }));
-      return;
-    }
-    if (file.size > PROFILE_IMAGE_MAX_SIZE) {
-      setErrors((current) => ({ ...current, imageFile: "Choose an image that is 5 MB or smaller." }));
+    const validation = profileImageFileSchema.safeParse(file);
+    if (!validation.success) {
+      setErrors((current) => ({
+        ...current,
+        imageFile:
+          validation.error.issues[0]?.message ?? "Choose a valid image file.",
+      }));
       return;
     }
 
@@ -156,12 +118,35 @@ export function ProfileEditDialog({ user }: { user: UserProfile }) {
     setErrors((current) => ({ ...current, imageFile: undefined }));
   }
 
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
-    const validationErrors = validateProfileFields(draft);
+    const validation = profileFieldsSchema.safeParse(draft);
+    const validationErrors: ValidationErrors = {};
+    if (!validation.success) {
+      const profileFields: ProfileFieldName[] = [
+        "full_name",
+        "email",
+        "role",
+        "birthdate",
+        "location",
+        "interests",
+        "dream",
+        "about",
+        "image",
+      ];
+      for (const issue of validation.error.issues) {
+        const field = issue.path[0];
+        if (
+          typeof field === "string" &&
+          profileFields.includes(field as ProfileFieldName)
+        ) {
+          validationErrors[field as ProfileFieldName] ??= issue.message;
+        }
+      }
+    }
     if (errors.imageFile) validationErrors.imageFile = errors.imageFile;
     setErrors(validationErrors);
-    if (Object.values(validationErrors).some(Boolean)) return;
+    if (!validation.success || errors.imageFile) return;
 
     if (currentUser?.id !== user.id || isSaving) {
       toast.error("Select this profile before editing it.");
@@ -181,14 +166,8 @@ export function ProfileEditDialog({ user }: { user: UserProfile }) {
       const updatedProfile = await saveUserProfile({
         profileId: user.id,
         fields: {
-          ...draft,
-          full_name: draft.full_name.trim(),
-          role: draft.role.trim(),
-          birthdate: draft.birthdate.trim(),
-          location: draft.location.trim(),
-          interests: draft.interests.map((interest) => interest.trim()).filter(Boolean),
-          dream: draft.dream.trim(),
-          about: draft.about.trim(),
+          ...validation.data,
+          interests: validation.data.interests.filter(Boolean),
           image,
         },
       });
@@ -267,7 +246,9 @@ export function ProfileEditDialog({ user }: { user: UserProfile }) {
                     event.currentTarget.value = "";
                   }}
                 />
-                <FieldDescription>Any image format, up to 5 MB.</FieldDescription>
+                <FieldDescription>
+                  Any image format, up to {PROFILE_IMAGE_MAX_SIZE / 1024 / 1024} MB.
+                </FieldDescription>
                 <FieldError>{errors.imageFile}</FieldError>
                 {(imagePreview || draft.image) && (
                   <Button

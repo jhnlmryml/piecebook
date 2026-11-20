@@ -1,25 +1,23 @@
-import { getSupabaseClient } from "@/lib/supabase";
-import type { Json, Tables, TablesInsert } from "@/types/supabase";
+import type { MarketplaceMessageListing } from "@/lib/messaging-events";
+import type { Json, Tables } from "@/types/supabase";
+import { apiRequest, ApiRequestError, jsonRequest } from "@/lib/api-client";
+import {
+  marketplaceCategories,
+  marketplaceListingCreateSchema,
+  marketplaceListingUpdateSchema,
+  type Category,
+  type ListingStatus,
+} from "@/lib/marketplace-validation";
 
-export type Category =
-  | "Vehicles"
-  | "Property Rentals"
-  | "Apparel"
-  | "Classifieds"
-  | "Electronics"
-  | "Entertainment"
-  | "Family"
-  | "Free Stuff"
-  | "Garden & Outdoor"
-  | "Hobbies"
-  | "Home Goods"
-  | "Home Improvement Supplies"
-  | "Home Sales"
-  | "Musical Instruments"
-  | "Office Supplies"
-  | "Pet Supplies"
-  | "Sporting Goods"
-  | "Toys & Games";
+export {
+  categoryDetailFields,
+  marketplaceCategories,
+  marketplaceConditions,
+  marketplaceListingCreateFormSchema,
+  marketplaceListingUpdateFormSchema,
+  MARKETPLACE_IMAGE_BUCKET,
+} from "@/lib/marketplace-validation";
+export type { Category, ListingStatus } from "@/lib/marketplace-validation";
 
 export type Listing = {
   id: string;
@@ -31,7 +29,10 @@ export type Listing = {
   category: Category;
   image: string;
   photos: string[];
+  sellerImage?: string | null;
+  quantity: number;
   condition: string;
+  status: ListingStatus;
   color?: string;
   material?: string;
   seller: string;
@@ -41,30 +42,6 @@ export type Listing = {
   isSponsored?: boolean;
   categoryDetails?: Record<string, string>;
 };
-
-export const categoryDetailFields: Record<Category, string[]> = {
-  Vehicles: ["Make", "Model", "Year", "Mileage", "Color"],
-  "Property Rentals": ["Bedrooms", "Bathrooms", "Square feet", "Lease term"],
-  Apparel: ["Brand", "Size", "Color", "Material"],
-  Classifieds: ["Brand", "Color", "Material"],
-  Electronics: ["Brand", "Model", "Storage", "Color"],
-  Entertainment: ["Type", "Brand", "Color"],
-  Family: ["Age range", "Brand", "Color"],
-  "Free Stuff": ["Color", "Material"],
-  "Garden & Outdoor": ["Brand", "Material", "Dimensions"],
-  Hobbies: ["Brand", "Model", "Material"],
-  "Home Goods": ["Brand", "Material", "Dimensions", "Color"],
-  "Home Improvement Supplies": ["Brand", "Material", "Quantity"],
-  "Home Sales": ["Bedrooms", "Bathrooms", "Square feet", "Year built"],
-  "Musical Instruments": ["Brand", "Instrument type", "Color", "Material"],
-  "Office Supplies": ["Brand", "Model", "Quantity"],
-  "Pet Supplies": ["Pet type", "Brand", "Size"],
-  "Sporting Goods": ["Brand", "Sport type", "Size", "Color"],
-  "Toys & Games": ["Brand", "Age range", "Material"],
-};
-
-export const marketplaceCategories = Object.keys(categoryDetailFields) as Category[];
-export const MARKETPLACE_IMAGE_BUCKET = "marketplace-listing-images";
 
 export const formatPrice = (price: number) =>
   price === 0 ? "Free" : `$${price.toLocaleString("en-US")}`;
@@ -108,7 +85,6 @@ const listingSnapshotCache = new Map<string, MarketplaceListingSnapshot>();
 function notifyListingListeners() {
   listeners.forEach((listener) => listener());
 }
-
 function setListingsSnapshot(nextSnapshot: MarketplaceListingsSnapshot) {
   listingsSnapshot = nextSnapshot;
   listingSnapshotCache.clear();
@@ -130,11 +106,15 @@ function getRelativeListedLabel(createdAt: string) {
   return `${days} ${days === 1 ? "day" : "days"} ago`;
 }
 
-function parseCategoryDetails(value: Json): Record<string, string> {
+export function parseCategoryDetails(value: Json): Record<string, string> {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
   return Object.fromEntries(
     Object.entries(value).filter((entry): entry is [string, string] => typeof entry[1] === "string"),
   );
+}
+
+function parseListingStatus(value: string): ListingStatus {
+  return value === "pending" || value === "sold" ? value : "available";
 }
 
 function mapMarketplaceListing(row: MarketplaceListingRow): Listing {
@@ -154,7 +134,9 @@ function mapMarketplaceListing(row: MarketplaceListingRow): Listing {
     category,
     image: photos[0] ?? "",
     photos,
+    quantity: row.quantity,
     condition: row.condition,
+    status: parseListingStatus(row.status),
     color: row.color ?? undefined,
     material: row.material ?? undefined,
     seller: row.seller_name,
@@ -191,6 +173,14 @@ export function getMarketplaceListingSnapshot(listingId: string): MarketplaceLis
   return snapshot;
 }
 
+export async function getMarketplaceMessageListing(
+  listingId: string,
+): Promise<MarketplaceMessageListing | null> {
+  return apiRequest<MarketplaceMessageListing | null>(
+    `marketplace/listings/${encodeURIComponent(listingId)}/message-card`,
+  );
+}
+
 export async function refreshMarketplaceListings() {
   if (loadPromise) return loadPromise;
 
@@ -201,23 +191,7 @@ export async function refreshMarketplaceListings() {
   }
 
   loadPromise = (async () => {
-    const supabase = getSupabaseClient();
-    const rows: MarketplaceListingRow[] = [];
-    const pageSize = 500;
-
-    for (let offset = 0; ; offset += pageSize) {
-      const { data, error } = await supabase
-        .from("marketplace_listing")
-        .select("*")
-        .order("created_at", { ascending: false })
-        .order("id", { ascending: true })
-        .range(offset, offset + pageSize - 1);
-
-      if (error) throw error;
-      rows.push(...data);
-      if (data.length < pageSize) break;
-    }
-
+    const rows = await apiRequest<MarketplaceListingRow[]>("marketplace/listings");
     setListingsSnapshot({
       status: "ready",
       listings: rows.map(mapMarketplaceListing),
@@ -238,22 +212,12 @@ export async function refreshMarketplaceListings() {
   return loadPromise;
 }
 
-function handleMarketplaceWindowFocus() {
-  if (listingsSnapshot.status === "ready") void refreshMarketplaceListings();
-}
-
 export function subscribeToMarketplaceListings(listener: () => void) {
   listeners.add(listener);
-  if (listeners.size === 1 && typeof window !== "undefined") {
-    window.addEventListener("focus", handleMarketplaceWindowFocus);
-  }
   if (listingsSnapshot.status === "loading") void refreshMarketplaceListings();
 
   return () => {
     listeners.delete(listener);
-    if (listeners.size === 0 && typeof window !== "undefined") {
-      window.removeEventListener("focus", handleMarketplaceWindowFocus);
-    }
   };
 }
 
@@ -262,6 +226,7 @@ export type CreateMarketplaceListingInput = {
   sellerName: string;
   title: string;
   price: number;
+  quantity: number;
   location: string;
   category: Category;
   condition: string;
@@ -270,90 +235,157 @@ export type CreateMarketplaceListingInput = {
   photoFiles: File[];
 };
 
-export async function createMarketplaceListing(input: CreateMarketplaceListingInput) {
-  const supabase = getSupabaseClient();
-  const imageBucket = supabase.storage.from(MARKETPLACE_IMAGE_BUCKET);
-  const uploadedPaths: string[] = [];
+export type UpdateMarketplaceListingInput = {
+  id: string;
+  sellerId: string;
+  title: string;
+  price: number;
+  quantity: number;
+  location: string;
+  category: Category;
+  condition: string;
+  description: string;
+  status: ListingStatus;
+  categoryDetails: Record<string, string>;
+};
 
-  try {
-    const photos: string[] = [];
-    for (const [index, photo] of input.photoFiles.entries()) {
-      if (!photo.type.toLowerCase().startsWith("image/")) {
-        throw new Error(`${photo.name}: only image files can be uploaded.`);
-      }
-      const extension = photo.name.split(".").pop()?.toLowerCase().replace(/[^a-z0-9]/g, "") || "img";
-      const path = `${input.sellerId}/${crypto.randomUUID()}-${index + 1}.${extension}`;
-      const { error: uploadError } = await imageBucket.upload(path, photo, {
-        contentType: photo.type,
-        upsert: false,
-      });
-      if (uploadError) throw uploadError;
-
-      uploadedPaths.push(path);
-      photos.push(imageBucket.getPublicUrl(path).data.publicUrl);
-    }
-
-    const categoryDetails = Object.fromEntries(
-      Object.entries(input.categoryDetails).filter(([, value]) => value.trim()),
+export async function updateMarketplaceListing(input: UpdateMarketplaceListingInput) {
+  const validation = marketplaceListingUpdateSchema.safeParse(input);
+  if (!validation.success) {
+    throw new Error(
+      validation.error.issues[0]?.message ?? "Listing details are invalid.",
     );
-    const row: TablesInsert<"marketplace_listing"> = {
-      seller_id: input.sellerId,
-      seller_name: input.sellerName,
-      title: input.title.trim(),
-      price: input.price,
-      location: input.location,
-      category: input.category,
-      condition: input.condition,
-      description: input.description.trim(),
-      photos,
-      category_details: categoryDetails,
-      color: categoryDetails.Color ?? null,
-      material: categoryDetails.Material ?? null,
-    };
-    const { data, error } = await supabase
-      .from("marketplace_listing")
-      .insert(row)
-      .select("*")
-      .single();
+  }
+  const validatedInput = validation.data;
+  const row = await apiRequest<MarketplaceListingRow>(
+    `marketplace/listings/${encodeURIComponent(validatedInput.id)}`,
+    jsonRequest("PATCH", validatedInput),
+  );
+  const listing = mapMarketplaceListing(row);
+  const currentListings = listingsSnapshot.status === "ready" ? listingsSnapshot.listings : [];
+  setListingsSnapshot({
+    status: "ready",
+    listings: currentListings.map((item) => item.id === listing.id ? listing : item),
+    error: null,
+  });
+  return listing;
+}
 
-    if (error) throw error;
+export async function deleteMarketplaceListing(listing: Listing, sellerId: string) {
+  const result = await apiRequest<{ cleanupWarning: string | null }>(
+    `marketplace/listings/${encodeURIComponent(listing.id)}?sellerId=${encodeURIComponent(sellerId)}`,
+    { method: "DELETE" },
+  );
+  const currentListings = listingsSnapshot.status === "ready" ? listingsSnapshot.listings : [];
+  setListingsSnapshot({
+    status: "ready",
+    listings: currentListings.filter((item) => item.id !== listing.id),
+    error: null,
+  });
 
-    const listing = mapMarketplaceListing(data);
-    const currentListings = listingsSnapshot.status === "ready" ? listingsSnapshot.listings : [];
-    setListingsSnapshot({
-      status: "ready",
-      listings: [listing, ...currentListings.filter((item) => item.id !== listing.id)],
-      error: null,
-    });
-    return listing;
+  return result.cleanupWarning;
+}
+
+export async function createMarketplaceListing(input: CreateMarketplaceListingInput) {
+  const validation = marketplaceListingCreateSchema.safeParse(input);
+  if (!validation.success) {
+    throw new Error(
+      validation.error.issues[0]?.message ?? "Listing details are invalid.",
+    );
+  }
+  const validatedInput: CreateMarketplaceListingInput = {
+    ...validation.data,
+    photoFiles: input.photoFiles,
+  };
+  const formData = new FormData();
+  formData.append("sellerId", validatedInput.sellerId);
+  formData.append("sellerName", validatedInput.sellerName);
+  formData.append("title", validatedInput.title);
+  formData.append("price", String(validatedInput.price));
+  formData.append("quantity", String(validatedInput.quantity));
+  formData.append("location", validatedInput.location);
+  formData.append("category", validatedInput.category);
+  formData.append("condition", validatedInput.condition);
+  formData.append("description", validatedInput.description);
+  formData.append("categoryDetails", JSON.stringify(validatedInput.categoryDetails));
+  validatedInput.photoFiles.forEach((photo) => formData.append("photos", photo));
+
+  const row = await apiRequest<MarketplaceListingRow>("marketplace/listings", {
+    method: "POST",
+    body: formData,
+  });
+  const listing = mapMarketplaceListing(row);
+  const currentListings = listingsSnapshot.status === "ready" ? listingsSnapshot.listings : [];
+  setListingsSnapshot({
+    status: "ready",
+    listings: [listing, ...currentListings.filter((item) => item.id !== listing.id)],
+    error: null,
+  });
+  return listing;
+}
+
+export async function getMarketplaceListingEngagementArchive(sourceListingId: string): Promise<{
+  likes: MarketplaceListingLikeArchive[];
+  comments: MarketplaceListingCommentArchive[];
+}> {
+  return apiRequest(
+    `marketplace/listings/${encodeURIComponent(sourceListingId)}/engagement/archive`,
+  );
+}
+
+export async function getMarketplaceOrderRecord(orderId: string): Promise<MarketplaceOrder | null> {
+  try {
+    return await apiRequest<MarketplaceOrder>(
+      `marketplace/orders/${encodeURIComponent(orderId)}`,
+    );
   } catch (error) {
-    if (uploadedPaths.length > 0) {
-      await imageBucket.remove(uploadedPaths).catch(() => undefined);
-    }
-    throw new Error(error instanceof Error ? error.message : "Could not publish this listing.");
+    if (error instanceof ApiRequestError && error.status === 404) return null;
+    throw error;
   }
 }
 
-export async function sendMarketplaceMessage({
-  listing,
-  senderId,
-  body,
-}: {
-  listing: Listing;
-  senderId: string;
-  body: string;
-}) {
-  if (!listing.sellerId) throw new Error("This seller cannot receive messages yet.");
-  if (isOwnMarketplaceListing(listing, senderId)) throw new Error("You cannot message your own listing.");
-  const trimmedBody = body.trim();
-  if (!trimmedBody) throw new Error("Write a message before sending it.");
+export type MarketplaceOrder = Tables<"marketplace_orders">;
+export type MarketplaceListingLikeArchive = Tables<"marketplace_listing_like_archive">;
+export type MarketplaceListingCommentArchive = Tables<"marketplace_listing_comment_archive">;
+export type MarketplaceOrderEmailNotifications = {
+  buyerSent: boolean;
+  sellerSent: boolean;
+  errors: string[];
+};
 
-  const { error } = await getSupabaseClient().from("message").insert({
-    listing_id: listing.id,
-    sender_id: senderId,
-    recipient_id: listing.sellerId,
-    body: trimmedBody,
+export async function checkoutMarketplaceListing(input: {
+  listingId: string;
+  buyerId: string;
+  quantity: number;
+  buyerEmail: string;
+}): Promise<{ order: MarketplaceOrder; emailNotifications: MarketplaceOrderEmailNotifications }> {
+  const response = await fetch("/api/marketplace/checkout", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
   });
 
-  if (error) throw new Error(`Could not send your message: ${error.message}`);
+  const result = (await response.json()) as {
+    order?: MarketplaceOrder;
+    emailNotifications?: MarketplaceOrderEmailNotifications;
+    error?: { message?: string };
+  };
+  if (!response.ok) {
+    throw new Error(result.error?.message ?? "Could not complete checkout.");
+  }
+  if (!result.order || !result.emailNotifications) {
+    throw new Error("Checkout returned an incomplete response.");
+  }
+  return {
+    order: result.order,
+    emailNotifications: result.emailNotifications,
+  };
+}
+
+export async function getMarketplaceOrderRecords(
+  profileId: string,
+  role: "buyer" | "seller",
+): Promise<MarketplaceOrder[]> {
+  const params = new URLSearchParams({ profileId, role });
+  return apiRequest<MarketplaceOrder[]>(`marketplace/orders?${params.toString()}`);
 }

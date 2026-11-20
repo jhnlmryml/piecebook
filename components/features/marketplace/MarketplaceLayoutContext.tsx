@@ -4,7 +4,7 @@ import { createContext, Suspense, useContext, useEffect, useMemo, useState, type
 import { usePathname, useRouter } from "next/navigation";
 import type { Category } from "./marketplace-data";
 
-export type MarketplaceView = "browse" | "saved" | "selling";
+export type MarketplaceView = "browse" | "saved" | "selling" | "purchases" | "sales";
 
 type MarketplaceLayoutState = {
   activeView: MarketplaceView;
