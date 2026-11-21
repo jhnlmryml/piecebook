@@ -149,7 +149,7 @@ export function PostComments({ postId }: { postId: string }) {
   useEffect(() => {
     if (!hasLoaded && !loadRequestedRef.current) {
       loadRequestedRef.current = true;
-      void Promise.resolve().then(loadComments);
+      void Promise.resolve().then(() => loadComments());
     }
   }, [hasLoaded, loadComments]);
 
