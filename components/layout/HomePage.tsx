@@ -106,9 +106,8 @@ export default function HomePage() {
   }, []);
 
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden">
-      <main className="mx-auto grid min-h-0 w-full max-w-6xl flex-1 grid-cols-1 grid-rows-[minmax(0,1fr)] gap-4 overflow-hidden px-3 py-4 sm:px-5 sm:py-6 md:grid-cols-[minmax(210px,0.8fr)_minmax(0,1.8fr)] md:gap-5 xl:grid-cols-[230px_minmax(0,1fr)_260px] xl:gap-6 xl:py-8">
-
+    <div className="flex h-full min-h-0 flex-col overflow-hidden bg-gradient-to-br from-background via-background to-primary/5">
+      <main className="mx-auto grid min-h-0 w-full max-w-7xl flex-1 grid-cols-1 grid-rows-[minmax(0,1fr)] gap-3 overflow-hidden px-3 py-3 motion-safe:animate-in motion-safe:fade-in motion-safe:duration-300 sm:gap-4 sm:px-5 sm:py-5 md:grid-cols-[minmax(200px,0.8fr)_minmax(0,1.8fr)] md:grid-rows-[minmax(0,1fr)] md:gap-5 lg:px-6 xl:grid-cols-[240px_minmax(0,1fr)_280px] xl:gap-6 xl:py-6">
         <aside
           className="hidden min-h-0 min-w-0 md:block"
           id="profile"
@@ -129,11 +128,11 @@ export default function HomePage() {
           aria-label="Other work portfolio"
           id="portfolio"
         >
-          <section className="piecebook-card-surface flex h-full min-h-0 flex-col overflow-hidden rounded-sm border">
+          <section className="piecebook-card-surface flex h-full min-h-0 flex-col overflow-hidden rounded-2xl border shadow-sm">
 
             <header className="piecebook-divider piecebook-secondary-surface shrink-0 border-b px-3 py-2.5">
               <p className="piecebook-muted-text text-[10px] font-semibold uppercase tracking-wider">
-                Advertise
+                Featured
               </p>
 
               <h2 className="piecebook-brand-text mt-0.5 text-sm font-bold">
@@ -151,18 +150,18 @@ export default function HomePage() {
               {PORTFOLIO_WORKS.map((work) => (
                 <article
                   key={work.url}
-                  className="overflow-hidden rounded-sm border border-border bg-background"
+                  className="overflow-hidden rounded-xl border border-border bg-card transition-all duration-300 hover:-translate-y-0.5 hover:border-primary/25 hover:shadow-md"
                 >
                   {/* Browser window */}
-                  <div className="overflow-hidden rounded-t-sm bg-code-surface">
+                  <div className="overflow-hidden rounded-t-xl bg-code-surface">
 
                     {/* Browser toolbar */}
                     <div className="flex h-9 items-center gap-3 border-b border-white/10 px-3">
 
                       <div className="flex shrink-0 items-center gap-1.5">
-                        <span className="size-2.5 rounded-full bg-[#ff5f57]" />
-                        <span className="size-2.5 rounded-full bg-[#febc2e]" />
-                        <span className="size-2.5 rounded-full bg-[#28c840]" />
+                        <span className="size-2.5 rounded-full bg-red-500" />
+                        <span className="size-2.5 rounded-full bg-amber-400" />
+                        <span className="size-2.5 rounded-full bg-emerald-500" />
                       </div>
 
                       <div className="flex h-5 min-w-0 flex-1 items-center rounded-sm bg-white/10 px-2">

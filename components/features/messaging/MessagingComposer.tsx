@@ -56,9 +56,9 @@ export function MessagingComposer({
   const isEditing = editingMessageId !== null;
 
   return (
-    <div className="shrink-0 border-t border-border p-3">
+    <div className="shrink-0 border-t border-border/70 bg-card/95 p-3 sm:p-4">
       {marketplaceContext && (
-        <div className="mb-3">
+        <div className="mb-3 overflow-hidden rounded-2xl">
           <MarketplaceListingContextCard
             listing={marketplaceContext}
             onViewListing={onViewListing}
@@ -66,7 +66,10 @@ export function MessagingComposer({
         </div>
       )}
       {error && (
-        <p role="alert" className="mb-2 text-sm text-destructive">
+        <p
+          role="alert"
+          className="mb-2 rounded-xl border border-destructive/20 bg-destructive/5 px-3 py-2 text-sm text-destructive"
+        >
           {error}
         </p>
       )}
@@ -85,7 +88,7 @@ export function MessagingComposer({
         onSubmit={onSubmit}
         header={
           editingMessage ? (
-            <div className="flex min-w-0 items-center gap-2 px-2 py-1">
+            <div className="flex min-w-0 items-center gap-2 rounded-lg bg-background/80 px-2 py-1">
               <Pencil aria-hidden="true" className="size-4 shrink-0 text-primary" />
               <div className="min-w-0 flex-1 border-l-2 border-primary/70 pl-2">
                 <p className="text-[11px] font-medium text-primary">Editing message</p>

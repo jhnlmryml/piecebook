@@ -44,6 +44,7 @@ import {
   type MessageWithReactions,
 } from "@/lib/messaging";
 import {
+  subscribeToDirectMessages,
   subscribeToMarketplaceMessaging,
   type MarketplaceMessageListing,
 } from "@/lib/messaging-events";
@@ -55,7 +56,11 @@ import {
   type MarketplaceOrder,
 } from "@/components/features/marketplace/marketplace-data";
 import { MARKETPLACE_MESSAGE_PREFILL } from "./messaging-constants";
-import type { MessageDeleteTarget, MessageSenderGroup } from "./messaging-types";
+import type {
+  MessageDeleteTarget,
+  MessageSenderGroup,
+  MessagingConversation,
+} from "./messaging-types";
 import type { UserProfile } from "@/types/user-profile";
 
 function getListingConversationPreviews(
@@ -105,6 +110,11 @@ export function MessagingCenter() {
   const { currentUser, allUsers } = useProfile();
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState<MessageWithReactions[]>([]);
+  const [exitingMessageIds, setExitingMessageIds] = useState<Set<string>>(new Set());
+  const [exitingConversationIds, setExitingConversationIds] = useState<Set<string>>(new Set());
+  const [exitingConversations, setExitingConversations] = useState<
+    { profile: UserProfile; conversation: MessagingConversation }[]
+  >([]);
   const [conversationPreferences, setConversationPreferences] = useState<
     MessageConversationPreference[]
   >([]);
@@ -142,6 +152,34 @@ export function MessagingCenter() {
   const [clock, setClock] = useState(0);
   const requestedMarketplaceListingsRef = useRef(new Set<string>());
   const requestedMarketplaceOrdersRef = useRef(new Set<string>());
+  const messagesRef = useRef(messages);
+  const completedMessageExitsRef = useRef(new Set<string>());
+
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
+
+  const beginMessageDissolve = useCallback((messageId: string) => {
+    if (
+      completedMessageExitsRef.current.has(messageId) ||
+      !messagesRef.current.some((message) => message.id === messageId)
+    ) {
+      return;
+    }
+    setExitingMessageIds((current) => new Set(current).add(messageId));
+  }, []);
+
+  const finishMessageDissolve = useCallback((messageId: string) => {
+    completedMessageExitsRef.current.add(messageId);
+    setMessages((current) =>
+      current.filter((message) => message.id !== messageId),
+    );
+    setExitingMessageIds((current) => {
+      const next = new Set(current);
+      next.delete(messageId);
+      return next;
+    });
+  }, []);
 
   const activeProfile = allUsers.find((profile) => profile.id === activeProfileId) ?? null;
   const activeMarketplaceContext =
@@ -155,6 +193,9 @@ export function MessagingCenter() {
       : listingConversationsLoadError;
   const isListingConversationsLoading = Boolean(
     listingConversationsListing && currentUser && isLoadingListingConversations,
+  );
+  const isLoadingConversations = Boolean(
+    open && currentUser && loadedProfileId !== currentUser.id,
   );
 
   const refreshUnreadCount = useCallback(async (profileId: string) => {
@@ -206,6 +247,32 @@ export function MessagingCenter() {
         setOpen(true);
       }),
     [activeProfileId],
+  );
+
+  useEffect(
+    () =>
+      subscribeToDirectMessages((recipientId) => {
+        if (!recipientId || recipientId === currentUser?.id) return;
+
+        setListingConversationsListing(null);
+        setListingConversationPreviews([]);
+        setListingConversationsLoadError(null);
+        setIsLoadingListingConversations(false);
+        setMarketplaceContext(null);
+        setMarketplaceContextRecipientId(null);
+        if (recipientId !== activeProfileId) {
+          setDraft("");
+          setFiles([]);
+        }
+        setEditingMessageId(null);
+        setEditDraft("");
+        setError(null);
+        setActiveProfileId(recipientId);
+        setIsPeopleListCollapsed(true);
+        setShowArchivedConversations(false);
+        setOpen(true);
+      }),
+    [activeProfileId, currentUser?.id],
   );
 
   useEffect(() => {
@@ -317,11 +384,18 @@ export function MessagingCenter() {
         const row = (
           change.eventType === "DELETE" ? change.oldRecord : change.newRecord
         ) as unknown as Message;
-        if (row.sender_id !== profileId && row.recipient_id !== profileId) return;
+
+        if (change.eventType === "DELETE") {
+          // Postgres DELETE payloads may contain only the primary key.
+          if (!messagesRef.current.some((message) => message.id === row.id)) return;
+          beginMessageDissolve(row.id);
+        } else if (row.sender_id !== profileId && row.recipient_id !== profileId) {
+          return;
+        }
 
         setMessages((current) => {
           if (change.eventType === "DELETE") {
-            return current.filter((message) => message.id !== row.id);
+            return current;
           }
           const previous = current.find((message) => message.id === row.id);
           if (change.eventType !== "INSERT" && !previous) return current;
@@ -376,7 +450,7 @@ export function MessagingCenter() {
         }),
       );
     });
-  }, [currentUser, refreshUnreadCount]);
+  }, [beginMessageDissolve, currentUser, refreshUnreadCount]);
 
   useEffect(() => {
     if (!open || !currentUser) return;
@@ -559,6 +633,8 @@ export function MessagingCenter() {
     if (!nextOpen) {
       setMarketplaceContext(null);
       setMarketplaceContextRecipientId(null);
+      setExitingConversationIds(new Set());
+      setExitingConversations([]);
     }
   }
 
@@ -685,9 +761,7 @@ export function MessagingCenter() {
       } else {
         await deleteMessageForMe(deleteTarget.messageId, currentUser.id);
       }
-      setMessages((current) =>
-        current.filter((message) => message.id !== deleteTarget.messageId),
-      );
+      beginMessageDissolve(deleteTarget.messageId);
       if (editingMessageId === deleteTarget.messageId) cancelMessageEdit();
       setDeleteTarget(null);
       void refreshUnreadCount(currentUser.id);
@@ -723,6 +797,17 @@ export function MessagingCenter() {
     const profileId = deleteConversationTarget;
     try {
       const preference = await deleteConversationForMe(currentUser.id, profileId);
+      const conversation = conversations.find(
+        (item) => item.profileId === profileId,
+      );
+      const profile = allUsers.find((item) => item.id === profileId);
+      if (conversation && profile) {
+        setExitingConversations((current) => [
+          ...current.filter((item) => item.profile.id !== profileId),
+          { profile, conversation },
+        ]);
+        setExitingConversationIds((current) => new Set(current).add(profileId));
+      }
       setConversationPreferences((current) => [
         ...current.filter((item) => item.partner_id !== profileId),
         preference,
@@ -742,13 +827,24 @@ export function MessagingCenter() {
     }
   }
 
+  function finishConversationDissolve(profileId: string) {
+    setExitingConversations((current) =>
+      current.filter((item) => item.profile.id !== profileId),
+    );
+    setExitingConversationIds((current) => {
+      const next = new Set(current);
+      next.delete(profileId);
+      return next;
+    });
+  }
+
   return (
     <>
       <Button
         type="button"
         variant="ghost"
         size="icon-sm"
-        className="relative shrink-0 rounded-full text-white hover:bg-white/10 hover:text-white"
+        className="relative size-9 shrink-0 rounded-full border border-border/70 bg-card text-muted-foreground transition-colors hover:border-primary/30 hover:bg-primary/5 hover:text-primary"
         aria-label={`Messages${unreadCount ? `, ${unreadCount} unread` : ""}`}
         title="Messages"
         onClick={() => {
@@ -768,22 +864,37 @@ export function MessagingCenter() {
       <Sheet open={open} onOpenChange={handleSheetOpenChange}>
         <SheetContent
           side="right"
-          className="w-full data-[side=right]:w-full data-[side=right]:sm:max-w-xl"
+          className="w-full bg-background p-0 text-foreground shadow-2xl data-[side=right]:w-full data-[side=right]:sm:max-w-2xl"
           showCloseButton
         >
-          <SheetHeader className="border-b border-border pr-12">
-            <SheetTitle className="text-base">Messages</SheetTitle>
-            <SheetDescription>Conversations with people on Piecebook.</SheetDescription>
+          <SheetHeader className="shrink-0 flex-row items-center gap-3 border-b border-border/70 bg-card/95 px-4 py-4 pr-14 sm:px-6 sm:py-5">
+            <span className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+              <MessageCircle aria-hidden="true" className="size-5" />
+            </span>
+            <div className="min-w-0 flex-1">
+              <SheetTitle className="text-xl font-semibold tracking-tight">Messages</SheetTitle>
+              <SheetDescription className="mt-0.5">
+                Conversations with people on Piecebook.
+              </SheetDescription>
+            </div>
+            {unreadCount > 0 && (
+              <span className="hidden shrink-0 rounded-full bg-primary/10 px-2.5 py-1 text-xs font-semibold text-primary sm:inline-flex">
+                {unreadCount > 99 ? "99+" : unreadCount} unread
+              </span>
+            )}
           </SheetHeader>
 
-          <div className="flex min-h-0 flex-1">
+          <div className="flex min-h-0 flex-1 overflow-hidden bg-background">
             <MessagingProfileList
               profiles={filteredPeople}
               allConversations={conversations}
               visibleConversations={visibleConversations}
               activeProfileId={activeProfileId}
               isCollapsed={isPeopleListCollapsed}
+              isLoadingConversations={isLoadingConversations}
               showArchived={showArchivedConversations}
+              exitingConversationIds={exitingConversationIds}
+              exitingConversations={exitingConversations}
               search={search}
               onSearchChange={setSearch}
               onToggleArchived={() =>
@@ -792,44 +903,56 @@ export function MessagingCenter() {
               onSelectProfile={selectProfile}
               onArchiveConversation={handleArchiveConversation}
               onDeleteConversation={setDeleteConversationTarget}
+              onConversationExitComplete={finishConversationDissolve}
             />
 
             <section
-              className={`${activeProfileId ? "flex" : "hidden"} min-w-0 flex-1 flex-col`}
+              className={`${activeProfileId ? "flex" : "hidden min-[480px]:flex"} min-w-0 flex-1 flex-col bg-background`}
             >
               {activeProfile && (
                 <>
-                  <div className="flex h-14 shrink-0 items-center gap-2 border-b border-border px-3">
+                  <header className="flex min-h-16 shrink-0 items-center gap-2 border-b border-border/70 bg-card/70 px-3 sm:px-5">
                     <Button
                       type="button"
                       variant="ghost"
                       size="icon-sm"
                       aria-label="Back to conversations"
                       onClick={clearActiveProfile}
+                      className="shrink-0 rounded-full"
                     >
                       <ArrowLeft aria-hidden="true" className="size-4" />
                     </Button>
-                    <Avatar className="size-8">
+                    <Avatar className="size-10 shrink-0 rounded-xl ring-1 ring-border/70">
                       {activeProfile.image && <AvatarImage src={activeProfile.image} alt="" />}
                       <AvatarFallback>{getInitials(activeProfile.full_name)}</AvatarFallback>
                     </Avatar>
-                    <p className="truncate text-sm font-semibold">{activeProfile.full_name}</p>
-                  </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-semibold sm:text-base">
+                        {activeProfile.full_name}
+                      </p>
+                      <p className="truncate text-xs text-muted-foreground">
+                        {activeProfile.role}
+                        {activeProfile.location ? ` · ${activeProfile.location}` : ""}
+                      </p>
+                    </div>
+                  </header>
 
                   <MessagingThread
                     activeProfile={activeProfile}
                     currentUserId={currentUser?.id ?? null}
                     now={clock}
-                    isLoading={open && loadedProfileId !== currentUser?.id}
+                    isLoading={isLoadingConversations}
                     isOpen={open}
                     messageGroups={messageGroups}
                     marketplaceListings={marketplaceListings}
                     marketplaceOrders={marketplaceOrders}
+                    exitingMessageIds={exitingMessageIds}
                     onViewListing={() => handleSheetOpenChange(false)}
                     onReact={handleReaction}
                     onCopy={handleCopyMessage}
                     onEdit={startEditingMessage}
                     onDelete={setDeleteTarget}
+                    onMessageExitComplete={finishMessageDissolve}
                   />
 
                   <MessagingComposer
@@ -854,6 +977,19 @@ export function MessagingCenter() {
                     onViewListing={() => handleSheetOpenChange(false)}
                   />
                 </>
+              )}
+              {!activeProfile && (
+                <div className="hidden flex-1 flex-col items-center justify-center px-6 text-center min-[480px]:flex">
+                  <span className="flex size-16 items-center justify-center rounded-3xl bg-primary/10 text-primary">
+                    <MessageCircle aria-hidden="true" className="size-7" />
+                  </span>
+                  <h2 className="mt-5 text-lg font-semibold tracking-tight">
+                    Your conversations, in one place
+                  </h2>
+                  <p className="mt-1 max-w-xs text-sm leading-6 text-muted-foreground">
+                    Choose a person from your inbox to pick up where you left off.
+                  </p>
+                </div>
               )}
             </section>
           </div>

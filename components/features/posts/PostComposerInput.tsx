@@ -81,13 +81,13 @@ type PostComposerInputProps = {
 };
 
 const POST_FORM_CLASS =
-  "piecebook-card-surface relative flex w-full min-w-0 max-h-60 shrink-0 flex-col overflow-hidden rounded-2xl border p-1 shadow-sm transition-colors hover:border-primary/30 focus-within:border-primary/50 focus-within:ring-2 focus-within:ring-primary/15";
+  "piecebook-card-surface relative flex w-full min-w-0 max-h-60 shrink-0 flex-col overflow-hidden rounded-2xl  p-1 shadow-sm transition-colors hover:border-primary/30 focus-within:border-primary/50 focus-within:ring-none ";
 const POST_CONTENT_CLASS =
   "relative flex min-h-0 min-w-0 flex-1 flex-col gap-2 p-2 sm:p-3";
 const POST_FIELD_CLASS =
   "relative flex min-h-0 min-w-0 flex-1 flex-col gap-1.5 overflow-hidden rounded-xl bg-muted/35 px-2 py-1";
 const POST_TEXTAREA_CLASS =
-  "field-sizing-content min-h-20 max-h-32 w-full min-w-0 flex-1 resize-none overflow-y-auto whitespace-pre-wrap border-0 bg-transparent px-1 py-2 text-sm leading-6 shadow-none scrollbar-hide select-text focus-visible:ring-0 dark:bg-transparent";
+  "field-sizing-content min-h-20 max-h-32 w-full min-w-0 flex-1 resize-none overflow-y-auto whitespace-pre-wrap border-0 bg-transparent px-1 py-2 text-sm leading-6 shadow-none scrollbar-hide select-text focus-visible:ring-0 dark:bg-transparent ";
 const COMMENT_FORM_CLASS =
   "piecebook-card-surface relative flex w-full min-w-0 flex-col overflow-visible rounded-2xl border p-1 shadow-sm transition-colors hover:border-primary/30 focus-within:border-primary/50 focus-within:ring-2 focus-within:ring-primary/15";
 const COMMENT_CONTENT_CLASS = "relative flex min-w-0 flex-1 items-center";

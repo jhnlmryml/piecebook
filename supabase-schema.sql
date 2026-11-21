@@ -249,6 +249,7 @@ create table if not exists public.marketplace_listing (
   id uuid primary key default gen_random_uuid(),
   seller_id uuid not null references public.users(id) on delete cascade,
   seller_name text not null,
+  seller_email text,
   title text not null check (char_length(title) between 1 and 80),
   price numeric(12, 2) not null check (price >= 0),
   previous_price numeric(12, 2),
@@ -271,6 +272,7 @@ create table if not exists public.marketplace_listing (
   created_at timestamptz not null default now()
 );
 alter table public.marketplace_listing add column if not exists photos text[] not null default '{}';
+alter table public.marketplace_listing add column if not exists seller_email text;
 alter table public.marketplace_listing add column if not exists category_details jsonb not null default '{}'::jsonb;
 alter table public.marketplace_listing add column if not exists color text;
 alter table public.marketplace_listing add column if not exists material text;

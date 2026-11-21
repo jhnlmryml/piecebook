@@ -6,6 +6,7 @@ import { Bookmark, Heart, ImageOff, MessageCircle } from "lucide-react";
 import { useState, useSyncExternalStore } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useProfile } from "@/context/ProfileContext";
 import { formatPrice, isOwnMarketplaceListing, type Listing } from "./marketplace-data";
 import {
@@ -35,22 +36,30 @@ export function ListingCard({ listing, isSaved, onSave }: ListingCardProps) {
 
   return (
     <article className="group relative min-w-0">
-      <Link href={listingHref} aria-label={`View ${listing.title}`} className="block h-full rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary">
-        <Card className="h-full min-w-0 overflow-hidden rounded-sm p-2 shadow-none ring-0">
-          <div className="relative block aspect-4/3 w-full overflow-hidden rounded-sm bg-secondary">
+      <Link
+        href={listingHref}
+        aria-label={`View ${listing.title}`}
+        className="block h-full rounded-2xl focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+      >
+        <Card className="h-full min-w-0 gap-0 overflow-hidden rounded-2xl border-border/70 bg-card p-1.5 shadow-sm transition duration-200 group-hover:-translate-y-0.5 group-hover:border-primary/25 group-hover:shadow-md group-focus-visible:ring-2 group-focus-visible:ring-primary/40">
+          <div className="relative block aspect-4/3 w-full overflow-hidden rounded-xl bg-muted">
             {listing.status !== "available" && (
-              <span className="absolute left-2 top-2 z-10 rounded-full bg-card/95 px-2.5 py-1 text-xs font-semibold capitalize text-foreground shadow-sm">
+              <span className="absolute left-2 top-2 z-10 rounded-full bg-card/95 px-2.5 py-1 text-[10px] font-semibold capitalize text-foreground shadow-sm backdrop-blur">
                 {listing.status}
               </span>
             )}
-            <div className="mt-2 flex absolute bottom-0 right-0 bg-primary/50 gap-2 rounded-full mr-2 mb-2 p-2 text-xs text-primary-foreground" aria-label="Listing activity">
+            <div className="absolute bottom-2 right-2 z-10 flex gap-2 rounded-full bg-black/55 px-2.5 py-1.5 text-xs text-white shadow-sm backdrop-blur-md" aria-label="Listing activity">
               <span className="inline-flex items-center gap-1" aria-label={engagementCount.status === "ready" ? `${engagementCount.likeCount} likes` : engagementCount.status === "error" ? `Like count unavailable: ${engagementCount.error}` : "Loading likes"}>
                 <Heart className="size-3.5" aria-hidden="true" />
-                {engagementCount.likeCount ?? "—"}
+                {engagementCount.status === "loading" ? (
+                  <Skeleton className="h-3 w-3 rounded-sm bg-white/40" />
+                ) : engagementCount.likeCount ?? "—"}
               </span>
               <span className="inline-flex items-center gap-1" aria-label={engagementCount.status === "ready" ? `${engagementCount.commentCount} comments` : engagementCount.status === "error" ? `Comment count unavailable: ${engagementCount.error}` : "Loading comments"}>
                 <MessageCircle className="size-3.5" aria-hidden="true" />
-                {engagementCount.commentCount ?? "—"}
+                {engagementCount.status === "loading" ? (
+                  <Skeleton className="h-3 w-3 rounded-sm bg-white/40" />
+                ) : engagementCount.commentCount ?? "—"}
               </span>
             </div>
             {imageUnavailable || !listing.image ? (
@@ -70,16 +79,16 @@ export function ListingCard({ listing, isSaved, onSave }: ListingCardProps) {
               />
             )}
           </div>
-          <CardContent className="min-w-0 px-0 pt-2">
+          <CardContent className="min-w-0 px-1 pb-1 pt-2.5">
             <div className="flex flex-wrap items-baseline gap-x-1.5">
-              <span className="text-sm font-bold">{formatPrice(listing.price)}</span>
+              <span className="text-base font-bold tracking-tight text-foreground sm:text-lg">{formatPrice(listing.price)}</span>
               {listing.previousPrice != null && <span className="text-xs text-muted-foreground line-through">{formatPrice(listing.previousPrice)}</span>}
             </div>
-            <span className="mt-0.5 block line-clamp-2 text-sm leading-snug">{listing.title}</span>
-            <p className="mt-1 truncate text-xs text-muted-foreground">{listing.location}</p>
-            <p className="truncate text-xs text-muted-foreground">{listing.category}</p>
+            <span className="mt-0.5 block line-clamp-2 text-sm font-medium leading-snug text-foreground">{listing.title}</span>
+            <p className="mt-1.5 truncate text-xs text-muted-foreground">{listing.location}</p>
+            <p className="mt-0.5 truncate text-[11px] text-muted-foreground">{listing.category}</p>
             {listing.status === "available" && (
-              <p className="mt-1 text-xs text-muted-foreground">
+              <p className="mt-1.5 text-[11px] font-medium text-muted-foreground">
                 {listing.quantity} available
               </p>
             )}
@@ -95,7 +104,7 @@ export function ListingCard({ listing, isSaved, onSave }: ListingCardProps) {
           aria-label={isSaved ? `Remove ${listing.title} from saved items` : `Save ${listing.title}`}
           aria-pressed={isSaved}
           onClick={onSave}
-          className={`absolute right-2 top-2 size-9 rounded-sm bg-card shadow-sm hover:bg-card ${isSaved ? "text-primary" : "text-foreground"}`}
+          className={`absolute right-2.5 top-2.5 size-9 rounded-full border border-border/70 bg-card/95 shadow-sm backdrop-blur transition hover:scale-105 hover:bg-card ${isSaved ? "text-primary" : "text-foreground"}`}
         >
           <Bookmark className={`size-4 ${isSaved ? "fill-current" : ""}`} />
         </Button>

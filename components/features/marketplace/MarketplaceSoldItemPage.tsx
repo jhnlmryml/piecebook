@@ -5,6 +5,7 @@ import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { MarketplaceDetailSkeleton } from "@/components/shared/LoadingSkeletons";
 import { ListingDetailsView } from "./ListingDetailsView";
 import { MarketplaceListingEngagement } from "./MarketplaceListingEngagement";
 import {
@@ -44,21 +45,24 @@ export default function MarketplaceSoldItemPage({ orderId }: { orderId: string }
 
   if (isLoading) {
     return (
-      <main className="h-full min-h-0 overflow-y-auto bg-background p-4 sm:p-6" aria-busy="true">
-        <Card className="mx-auto h-64 max-w-4xl animate-pulse rounded-sm border-border bg-card shadow-none" />
+      <main className="scrollbar-hide h-full min-h-0 overflow-y-auto px-3 py-4 sm:px-6 sm:py-6" aria-busy="true">
+        <div className="mx-auto w-full max-w-7xl">
+          <MarketplaceDetailSkeleton />
+        </div>
       </main>
     );
   }
 
   if (!order) {
     return (
-      <main className="h-full min-h-0 overflow-y-auto bg-background px-4 py-8 sm:px-6">
-        <Card className="mx-auto max-w-3xl rounded-sm border border-border bg-card p-6 shadow-none ring-0">
-          <h1 className="text-xl font-bold">Sold item unavailable</h1>
+      <main className="scrollbar-hide h-full min-h-0 overflow-y-auto px-4 py-8 sm:px-6">
+        <Card className="mx-auto max-w-3xl rounded-2xl border bg-card p-6 shadow-sm sm:p-8">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-primary">Marketplace</p>
+          <h1 className="mt-2 text-xl font-bold">Sold item unavailable</h1>
           <p role="alert" className="mt-2 text-sm text-muted-foreground">
             {error ?? "This saved item record could not be found."}
           </p>
-          <Button nativeButton={false} render={<Link href="/marketplace" />} className="mt-5">
+          <Button nativeButton={false} render={<Link href="/marketplace" />} className="mt-5 rounded-xl">
             <ArrowLeft className="size-4" />Back
           </Button>
         </Card>
@@ -95,15 +99,15 @@ export default function MarketplaceSoldItemPage({ orderId }: { orderId: string }
   };
 
   return (
-    <main className="h-full min-h-0 overflow-y-auto bg-background px-3 pb-8 pt-4 sm:px-6 sm:pt-6">
+    <main className="scrollbar-hide h-full min-h-0 overflow-y-auto px-3 pb-8 pt-4 sm:px-6 sm:pt-6">
       <div className="mx-auto w-full max-w-7xl min-w-0">
-        <Button nativeButton={false} render={<Link href="/marketplace" />} variant="ghost" className="mb-4 px-2">
+        <Button nativeButton={false} render={<Link href="/marketplace" />} variant="ghost" className="mb-4 rounded-full px-3">
           <ArrowLeft className="size-4" />Back 
         </Button>
-        <Card className="overflow-hidden rounded-sm border border-border bg-card p-0 shadow-sm ring-0">
-          <div className="border-b border-border px-4 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        <Card className="overflow-hidden rounded-2xl border border-border/70 bg-card p-0 shadow-sm">
+          {/* <div className="border-b border-border/70 px-4 py-3 text-[10px] font-semibold uppercase tracking-[0.16em] text-primary">
             {order.listing_id ? "Saved item preview" : "Saved item preview · Read-only"}
-          </div>
+          </div> */}
           <ListingDetailsView
             listing={snapshotListing}
             photos={snapshotListing.photos}

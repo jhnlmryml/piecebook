@@ -78,13 +78,16 @@ export function MessageAttachments({
 
         if (attachment.contentType.startsWith("image/")) {
           return (
-            <div key={attachment.path} className="relative max-w-full">
+            <div
+              key={attachment.path}
+              className="relative max-w-full overflow-hidden rounded-2xl border border-current/10 bg-background/10"
+            >
               <a
                 href={url}
                 target="_blank"
                 rel="noreferrer"
                 aria-label={`Open image ${attachment.name}`}
-                className="block max-w-full overflow-hidden rounded-xl focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+                className="block max-w-full overflow-hidden rounded-2xl focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
               >
                 <Image
                   src={url}
@@ -92,7 +95,7 @@ export function MessageAttachments({
                   width={480}
                   height={360}
                   unoptimized
-                  className="h-auto max-h-64 max-w-full rounded-xl object-contain"
+                  className="h-auto max-h-80 max-w-full rounded-2xl object-contain"
                 />
               </a>
               <Button
@@ -103,7 +106,7 @@ export function MessageAttachments({
                 title="Save to device"
                 disabled={downloadingPath !== null}
                 onClick={() => void saveToDevice(attachment)}
-                className="absolute right-2 bottom-2 rounded-full shadow-md"
+                className="absolute bottom-2 right-2 rounded-full border border-border/70 bg-card/95 shadow-md"
               >
                 {downloadingPath === attachment.path ? (
                   <LoaderCircle aria-hidden="true" className="animate-spin" />
@@ -118,13 +121,13 @@ export function MessageAttachments({
         return (
           <div
             key={attachment.path}
-            className="flex min-w-0 max-w-full items-center gap-1.5 rounded-lg border border-current/15 bg-background/20 p-1.5 text-xs"
+            className="flex min-w-0 max-w-full items-center gap-2 rounded-xl border border-current/15 bg-background/25 p-2 text-xs"
           >
             <a
               href={url}
               target="_blank"
               rel="noreferrer"
-              className="flex min-w-0 items-center gap-2 rounded-md px-1 hover:bg-background/40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+              className="flex min-w-0 items-center gap-2 rounded-lg px-1.5 py-1 transition-colors hover:bg-background/40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
             >
               <Paperclip aria-hidden="true" className="size-4 shrink-0" />
               <span className="min-w-0 py-1">

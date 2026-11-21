@@ -17,8 +17,8 @@
 2. Copy `.env.example` to `.env.local`.
 3. Set `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` using
    your Supabase project's API settings.
-4. Optionally configure Gmail SMTP and `MARKETPLACE_SELLER_EMAIL` for checkout
-   notifications. Use a Gmail app password, not your account password.
+4. Optionally configure Gmail SMTP for checkout notifications. Use a Gmail app
+   password, not your account password.
 5. Apply [`supabase-schema.sql`](./supabase-schema.sql) in the Supabase SQL
    Editor.
 6. Run `npm run dev` and open `http://localhost:3000`.
@@ -47,7 +47,9 @@ for this app's public demo model; it does not establish private per-user access.
 - Checkout creation does not require SMTP. Without Gmail settings, the order
   can still be created, but email notifications are not sent.
 - Gmail notifications require `GMAIL_USER` and `GMAIL_APP_PASSWORD`.
-  `MARKETPLACE_SELLER_EMAIL` sets the notification recipient for the seller.
+- The buyer can optionally enter an email at checkout. Sellers can optionally
+  add their email when creating a listing. Only provided addresses receive
+  notifications; if neither is available, no notification emails are sent.
 
 ## Common commands
 

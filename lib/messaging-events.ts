@@ -19,6 +19,28 @@ export type MarketplaceMessagingRequest = {
 );
 
 const OPEN_MARKETPLACE_MESSAGING_EVENT = "piecebook:open-marketplace-messaging";
+const OPEN_DIRECT_MESSAGE_EVENT = "piecebook:open-direct-message";
+
+export function requestDirectMessage(recipientId: string) {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(
+    new CustomEvent<string>(OPEN_DIRECT_MESSAGE_EVENT, {
+      detail: recipientId,
+    }),
+  );
+}
+
+export function subscribeToDirectMessages(
+  listener: (recipientId: string) => void,
+) {
+  if (typeof window === "undefined") return () => {};
+
+  const handleEvent = (event: Event) => {
+    listener((event as CustomEvent<string>).detail);
+  };
+  window.addEventListener(OPEN_DIRECT_MESSAGE_EVENT, handleEvent);
+  return () => window.removeEventListener(OPEN_DIRECT_MESSAGE_EVENT, handleEvent);
+}
 
 export function requestMarketplaceMessaging(request: MarketplaceMessagingRequest) {
   if (typeof window === "undefined") return;

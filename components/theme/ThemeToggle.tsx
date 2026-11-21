@@ -44,9 +44,9 @@ export function ThemeToggle() {
       aria-label={`Change color theme. Current theme: ${selectedOption.label}`}
       title={`Theme: ${selectedOption.label}`}
       onClick={cycleTheme}
-      className="shrink-0 rounded-full text-white hover:bg-white/10 hover:text-white"
+      className="shrink-0 rounded-full text-muted-foreground hover:bg-accent hover:text-foreground"
     >
-      <ThemeIcon aria-hidden="true" className="size-3.5" />
+      <ThemeIcon aria-hidden="true" className="size-4" />
     </Button>
   );
 }

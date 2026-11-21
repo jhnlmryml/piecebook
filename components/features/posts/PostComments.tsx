@@ -7,6 +7,7 @@ import {
   useState,
   type SubmitEvent,
 } from "react";
+import { usePathname } from "next/navigation";
 import {
   Loader2,
   MessageCircle,
@@ -44,18 +45,21 @@ import {
 
 export function PostComments({ postId }: { postId: string }) {
   const { currentUser, allUsers } = useProfile();
+  const pathname = usePathname();
   const [hasLoaded, setHasLoaded] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const [draft, setDraft] = useState("");
   const [imageFiles, setImageFiles] = useState<File[]>([]);
   const [comments, setComments] = useState<PostComment[]>([]);
+  const [exitingCommentIds, setExitingCommentIds] = useState<Set<string>>(new Set());
   const [commentCount, setCommentCount] = useState<number | null>(null);
   const [hasReachedOldestComment, setHasReachedOldestComment] = useState(false);
   const countRequestId = useRef(0);
   const loadRequestedRef = useRef(false);
   const knownCommentIds = useRef(new Set<string>());
   const deletedCommentIds = useRef(new Set<string>());
+  const completedCommentExits = useRef(new Set<string>());
   const commentScrollerRef = useRef<HTMLDivElement | null>(null);
   const scrollToLatestRef = useRef(false);
   const preserveScrollRef = useRef<{
@@ -65,6 +69,24 @@ export function PostComments({ postId }: { postId: string }) {
   const [isLoadingOlder, setIsLoadingOlder] = useState(false);
   const isLoadingOlderRef = useRef(false);
   const [deletingCommentId, setDeletingCommentId] = useState<string | null>(null);
+  const previousPathname = useRef(pathname);
+
+  const beginCommentDissolve = useCallback((commentId: string) => {
+    if (completedCommentExits.current.has(commentId)) return;
+    setExitingCommentIds((current) => new Set(current).add(commentId));
+  }, []);
+
+  const finishCommentDissolve = useCallback((comment: PostComment) => {
+    completedCommentExits.current.add(comment.id);
+    setComments((current) =>
+      current.filter((item) => item.id !== comment.id),
+    );
+    setExitingCommentIds((current) => {
+      const next = new Set(current);
+      next.delete(comment.id);
+      return next;
+    });
+  }, []);
 
   const refreshCommentCount = useCallback(async () => {
     const requestId = ++countRequestId.current;
@@ -94,11 +116,11 @@ export function PostComments({ postId }: { postId: string }) {
     };
   }, [postId]);
 
-  const loadComments = useCallback(async () => {
-    setIsLoading(true);
+  const loadComments = useCallback(async (showLoading = true) => {
+    if (showLoading) setIsLoading(true);
     try {
       const loadedComments = await getPostComments(postId);
-      scrollToLatestRef.current = true;
+      scrollToLatestRef.current = showLoading;
       for (const comment of loadedComments) {
         knownCommentIds.current.add(comment.id);
       }
@@ -114,11 +136,13 @@ export function PostComments({ postId }: { postId: string }) {
       setHasLoaded(true);
     } catch (error) {
       loadRequestedRef.current = false;
-      toast.error(
-        error instanceof Error ? error.message : "Could not load comments.",
-      );
+      if (showLoading) {
+        toast.error(
+          error instanceof Error ? error.message : "Could not load comments.",
+        );
+      }
     } finally {
-      setIsLoading(false);
+      if (showLoading) setIsLoading(false);
     }
   }, [postId]);
 
@@ -128,6 +152,24 @@ export function PostComments({ postId }: { postId: string }) {
       void Promise.resolve().then(loadComments);
     }
   }, [hasLoaded, loadComments]);
+
+  useEffect(() => {
+    if (previousPathname.current === pathname) return;
+    previousPathname.current = pathname;
+    if (!hasLoaded) return;
+    void loadComments(false);
+    void refreshCommentCount();
+  }, [hasLoaded, loadComments, pathname, refreshCommentCount]);
+
+  useEffect(() => {
+    const refreshWhenVisible = () => {
+      if (document.visibilityState !== "visible" || !hasLoaded) return;
+      void loadComments(false);
+      void refreshCommentCount();
+    };
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+    return () => document.removeEventListener("visibilitychange", refreshWhenVisible);
+  }, [hasLoaded, loadComments, refreshCommentCount]);
 
   useEffect(() => {
     const scroller = commentScrollerRef.current;
@@ -156,6 +198,7 @@ export function PostComments({ postId }: { postId: string }) {
           : change.newRecord) as unknown as PostComment;
         if (!record.id || record.post_id !== postId) return;
         if (change.eventType === "DELETE") {
+          const wasKnown = knownCommentIds.current.has(record.id);
           if (!deletedCommentIds.current.has(record.id)) {
             deletedCommentIds.current.add(record.id);
             knownCommentIds.current.delete(record.id);
@@ -163,9 +206,7 @@ export function PostComments({ postId }: { postId: string }) {
               count === null ? count : Math.max(0, count - 1),
             );
           }
-          setComments((current) =>
-            current.filter((comment) => comment.id !== record.id),
-          );
+          if (wasKnown) beginCommentDissolve(record.id);
           void refreshCommentCount();
           return;
         }
@@ -183,7 +224,7 @@ export function PostComments({ postId }: { postId: string }) {
             .sort(compareComments);
         });
       }),
-    [postId, refreshCommentCount],
+    [beginCommentDissolve, postId, refreshCommentCount],
   );
 
   async function loadOlderComments() {
@@ -318,9 +359,7 @@ export function PostComments({ postId }: { postId: string }) {
           count === null ? count : Math.max(0, count - 1),
         );
       }
-      setComments((existing) =>
-        existing.filter((item) => item.id !== comment.id),
-      );
+      beginCommentDissolve(comment.id);
       void refreshCommentCount();
       if (result.storageCleanupError) {
         toast.error(`Comment deleted, but ${result.storageCleanupError}`);
@@ -367,7 +406,6 @@ export function PostComments({ postId }: { postId: string }) {
                 scrollTriggerMode="press"
                 ref={commentScrollerRef}
                 withNavigation
-                navigationClassName="left-auto right-2 translate-x-0 rounded-full bg-background/90 p-1 shadow-sm"
                 hideScrollbar
                 scrollShadows={false}
                 onScroll={(event) => {
@@ -375,7 +413,7 @@ export function PostComments({ postId }: { postId: string }) {
                     void loadOlderComments();
                   }
                 }}
-                className="max-h-72 min-w-0 px-1 pt-2 pr-10 pb-6 sm:px-2 sm:pr-10"
+                className="max-h-72 min-w-0 px-1 pt-2 pb-6 sm:px-2"
               >
                 {isLoadingOlder && (
                   <p
@@ -391,7 +429,9 @@ export function PostComments({ postId }: { postId: string }) {
                   allUsers={allUsers}
                   currentUserId={currentUser?.id}
                   deletingCommentId={deletingCommentId}
+                  exitingCommentIds={exitingCommentIds}
                   onDelete={handleDeleteComment}
+                  onExitComplete={finishCommentDissolve}
                 />
               </Scroller>
             </>

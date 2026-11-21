@@ -13,6 +13,7 @@ function getAllowedMethods(path: string[]): Method[] | null {
   if (path[0] === "profiles") {
     if (path.length === 1) return ["GET"];
     if (path.length === 2) return ["PATCH"];
+    if (path.length === 3 && path[2] === "activity") return ["GET"];
   }
   if (path[0] === "posts") {
     if (path.length === 1) return ["GET", "POST"];

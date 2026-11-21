@@ -225,11 +225,16 @@ export const marketplaceEmailSchema = z
   .max(254)
   .email("Enter a valid email address.");
 
+export const optionalMarketplaceEmailSchema = z.preprocess(
+  (value) => typeof value === "string" && !value.trim() ? undefined : value,
+  marketplaceEmailSchema.optional(),
+);
+
 export const checkoutRequestSchema = z.object({
   listingId: z.string().uuid(),
   buyerId: z.string().uuid(),
   quantity: z.number().int().positive(),
-  buyerEmail: marketplaceEmailSchema,
+  buyerEmail: optionalMarketplaceEmailSchema,
 });
 
 export const checkoutFormSchema = checkoutRequestSchema.extend({

@@ -6,6 +6,7 @@ import {
   Bookmark,
   CarFront,
   Clapperboard,
+  ClipboardList,
   CircleDollarSign,
   Gamepad2,
   Grid2x2,
@@ -66,7 +67,7 @@ const categoryIcons: Record<Category, LucideIcon> = {
 };
 
 const viewItems: { label: string; view: MarketplaceView; icon: LucideIcon }[] = [
-  { label: "Manage your listings", view: "selling", icon: Tag },
+  { label: "Manage your listings", view: "selling", icon: ClipboardList },
   { label: "Saved items", view: "saved", icon: Bookmark },
   { label: "Purchase history", view: "purchases", icon: ShoppingBag },
   { label: "Sales history", view: "sales", icon: CircleDollarSign },
@@ -90,15 +91,19 @@ export function MarketplaceNavigation() {
   );
   const listings = listingsSnapshot.listings;
   const categoryCounts = useMemo(
-    () => Object.fromEntries(
-      marketplaceCategories.map((category) => [
-        category,
-        listings.filter((listing) => listing.category === category).length,
-      ]),
-    ) as Record<Category, number>,
+    () => {
+      const counts = Object.fromEntries(
+        marketplaceCategories.map((category) => [category, 0]),
+      ) as Record<Category, number>;
+      for (const listing of listings) counts[listing.category] += 1;
+      return counts;
+    },
     [listings],
   );
-  const sellingCount = listings.filter((listing) => listing.sellerId === currentUser?.id).length;
+  const sellingCount = useMemo(
+    () => listings.filter((listing) => listing.sellerId === currentUser?.id).length,
+    [currentUser?.id, listings],
+  );
 
   const closeMobileSidebar = () => {
     if (isMobile) setOpenMobile(false);
@@ -120,8 +125,6 @@ export function MarketplaceNavigation() {
 
   return (
     <>
-
-
       <SidebarGroup className="px-0 py-2">
         <SidebarGroupContent>
           <SidebarMenu>
@@ -130,10 +133,9 @@ export function MarketplaceNavigation() {
                 type="button"
                 onClick={createListing}
                 tooltip="Create new listing"
-                className="h-10 gap-3  font-semibold text-primary hover:bg-secondary group-data-[collapsible=icon]:p-0! group-data-[collapsible=icon]:justify-center!"
+                className="h-11 gap-3 rounded-xl font-semibold text-primary transition-colors hover:bg-primary/10 group-data-[collapsible=icon]:p-0! group-data-[collapsible=icon]:justify-center!"
               >
-                  <Plus className="size-4" />
-                
+                <Plus className="size-4" />
                 <span className="group-data-[collapsible=icon]:hidden">Create new listing</span>
               </SidebarMenuButton>
             </SidebarMenuItem>
@@ -144,9 +146,9 @@ export function MarketplaceNavigation() {
                   isActive={activeView === view}
                   onClick={() => selectView(view)}
                   tooltip={`${label}${view === "saved" || view === "selling" ? ` · ${formatCount(view === "saved" ? savedListingIds.length : sellingCount)} items` : ""}`}
-                  className={`h-10 gap-3 pr-8 text-sm group-data-[collapsible=icon]:p-0! group-data-[collapsible=icon]:justify-center! ${activeView === view ? "bg-secondary! font-semibold! text-primary!" : "hover:bg-muted"}`}
+                  className={`h-10 gap-3 rounded-xl pr-8 text-sm transition-colors group-data-[collapsible=icon]:p-0! group-data-[collapsible=icon]:justify-center! ${activeView === view ? "bg-primary/10! font-semibold! text-primary!" : "hover:bg-muted/70"}`}
                 >
-                 <Icon className="size-4" />
+                  <Icon className="size-4" />
                   <span className="group-data-[collapsible=icon]:hidden">{label}</span>
                 </SidebarMenuButton>
                 {(view === "saved" || view === "selling") && (
@@ -158,17 +160,25 @@ export function MarketplaceNavigation() {
         </SidebarGroupContent>
       </SidebarGroup>
 
-      <SidebarSeparator className="mx-0 w-full" />
+      <SidebarSeparator className="mx-0 w-full opacity-70" />
 
       <SidebarGroup className="px-0 py-2">
-        <SidebarGroupLabel className="h-8 px-2 text-sm font-semibold text-foreground">
+        <SidebarGroupLabel className="h-8 px-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
           Categories
-          {activeCategory && <button type="button" onClick={() => selectCategory(null)} className="ml-auto text-xs font-medium text-primary">Clear</button>}
+          {activeCategory && (
+            <button
+              type="button"
+              onClick={() => selectCategory(null)}
+              className="ml-auto rounded-full px-2 py-1 text-[10px] font-semibold normal-case tracking-normal text-primary transition-colors hover:bg-primary/10"
+            >
+              Clear
+            </button>
+          )}
         </SidebarGroupLabel>
         <SidebarGroupContent>
           <SidebarMenu>
             <SidebarMenuItem>
-              <SidebarMenuButton type="button" isActive={!activeCategory && activeView === "browse"} onClick={() => selectCategory(null)} tooltip={`All categories · ${formatCount(listings.length)} items`} className={`h-10 gap-3 pr-8 text-sm group-data-[collapsible=icon]:p-0! group-data-[collapsible=icon]:justify-center! ${!activeCategory && activeView === "browse" ? "bg-secondary! font-semibold! text-primary!" : "hover:bg-muted"}`}>
+              <SidebarMenuButton type="button" isActive={!activeCategory && activeView === "browse"} onClick={() => selectCategory(null)} tooltip={`All categories · ${formatCount(listings.length)} items`} className={`h-10 gap-3 rounded-xl pr-8 text-sm transition-colors group-data-[collapsible=icon]:p-0! group-data-[collapsible=icon]:justify-center! ${!activeCategory && activeView === "browse" ? "bg-primary/10! font-semibold! text-primary!" : "hover:bg-muted/70"}`}>
                 <Grid2x2 className="size-4" />
                 <span className="group-data-[collapsible=icon]:hidden">All categories</span>
               </SidebarMenuButton>
@@ -178,7 +188,7 @@ export function MarketplaceNavigation() {
               const Icon = categoryIcons[category];
               return (
                 <SidebarMenuItem key={category}>
-                  <SidebarMenuButton type="button" isActive={activeCategory === category} onClick={() => selectCategory(category)} tooltip={`${category} · ${formatCount(categoryCounts[category] ?? 0)} listings`} className={`h-10 gap-3 pr-8 text-sm group-data-[collapsible=icon]:p-0! group-data-[collapsible=icon]:justify-center! ${activeCategory === category ? "bg-secondary! font-semibold! text-primary!" : "hover:bg-muted"}`}>
+                  <SidebarMenuButton type="button" isActive={activeCategory === category} onClick={() => selectCategory(category)} tooltip={`${category} · ${formatCount(categoryCounts[category] ?? 0)} listings`} className={`h-10 gap-3 rounded-xl pr-8 text-sm transition-colors group-data-[collapsible=icon]:p-0! group-data-[collapsible=icon]:justify-center! ${activeCategory === category ? "bg-primary/10! font-semibold! text-primary!" : "hover:bg-muted/70"}`}>
                     <Icon className="size-4" />
                     <span className="group-data-[collapsible=icon]:hidden">{category}</span>
                   </SidebarMenuButton>

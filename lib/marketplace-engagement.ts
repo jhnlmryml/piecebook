@@ -4,6 +4,7 @@ import {
   COMMENT_MAX_LENGTH,
 } from "@/lib/form-schemas";
 import { apiRequest, jsonRequest } from "@/lib/api-client";
+import { broadcastRealtimeChange } from "@/lib/realtime-events";
 
 export type MarketplaceListingComment = Tables<"marketplace_listing_comments">;
 export type MarketplaceListingLike = Tables<"marketplace_listing_likes">;
@@ -76,10 +77,17 @@ export async function createMarketplaceListingComment(
         `Comments must be ${COMMENT_MAX_LENGTH} characters or fewer.`,
     );
   }
-  return apiRequest(
+  const createdComment = await apiRequest<MarketplaceListingComment>(
     `marketplace/listings/${encodeURIComponent(comment.listing_id)}/comments`,
     jsonRequest("POST", { ...comment, ...validation.data }),
   );
+  broadcastRealtimeChange({
+    table: "marketplace_listing_comments",
+    eventType: "INSERT",
+    newRecord: createdComment,
+    oldRecord: {},
+  });
+  return createdComment;
 }
 
 export async function deleteMarketplaceListingComment(
@@ -87,10 +95,17 @@ export async function deleteMarketplaceListingComment(
   commentId: string,
   profileId: string,
 ): Promise<{ storageCleanupError?: string }> {
-  return apiRequest(
+  const result = await apiRequest<{ storageCleanupError?: string }>(
     `marketplace/listings/${encodeURIComponent(listingId)}/comments/${encodeURIComponent(commentId)}?profileId=${encodeURIComponent(profileId)}`,
     { method: "DELETE" },
   );
+  broadcastRealtimeChange({
+    table: "marketplace_listing_comments",
+    eventType: "DELETE",
+    newRecord: {},
+    oldRecord: { id: commentId, listing_id: listingId, user_id: profileId },
+  });
+  return result;
 }
 
 export async function getMarketplaceMessages(

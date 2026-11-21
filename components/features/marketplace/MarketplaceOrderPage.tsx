@@ -8,6 +8,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Bubble, BubbleContent } from "@/components/ui/bubble";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Message,
   MessageAvatar,
@@ -18,6 +19,8 @@ import {
 } from "@/components/ui/message";
 import { Scroller } from "@/components/ui/scroller";
 import { LocalDateTime } from "@/components/shared/LocalDateTime";
+import { MarketplaceOrderSkeleton } from "@/components/shared/LoadingSkeletons";
+import { MarketplaceOrderParty } from "./MarketplaceOrderParty";
 import { useProfile } from "@/context/ProfileContext";
 import { getInitials } from "@/lib/get-initials";
 import {
@@ -65,21 +68,22 @@ export default function MarketplaceOrderPage({ orderId }: { orderId: string }) {
 
   if (isLoading || isProfileLoading) {
     return (
-      <main className="h-full min-h-0 overflow-y-auto bg-background p-4 sm:p-6" aria-busy="true">
-        <Card className="mx-auto h-64 max-w-4xl animate-pulse rounded-sm border-border bg-card shadow-none" />
+      <main className="scrollbar-hide h-full min-h-0 overflow-y-auto px-3 py-4 sm:px-6 sm:py-6" aria-busy="true">
+        <MarketplaceOrderSkeleton />
       </main>
     );
   }
 
   if (error || !order || !hasAccess) {
     return (
-      <main className="h-full min-h-0 overflow-y-auto bg-background px-4 py-8 sm:px-6">
-        <Card className="mx-auto max-w-3xl rounded-sm border border-border bg-card p-6 shadow-none ring-0">
-          <h1 className="text-xl font-bold">Order record unavailable</h1>
+      <main className="scrollbar-hide h-full min-h-0 overflow-y-auto px-4 py-8 sm:px-6">
+        <Card className="mx-auto max-w-3xl rounded-2xl border bg-card p-6 shadow-sm sm:p-8">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-primary">Marketplace</p>
+          <h1 className="mt-2 text-xl font-bold">Order record unavailable</h1>
           <p className="mt-2 text-sm text-muted-foreground">
             {error ?? (order ? "Switch to the buyer or seller profile for this order." : "This order record could not be found.")}
           </p>
-          <Button nativeButton={false} render={<Link href="/marketplace" />} className="mt-5">
+          <Button nativeButton={false} render={<Link href="/marketplace" />} className="mt-5 rounded-xl">
             <ArrowLeft className="size-4" />Back 
           </Button>
         </Card>
@@ -90,25 +94,33 @@ export default function MarketplaceOrderPage({ orderId }: { orderId: string }) {
   const photos = order.listing_photos;
 
   return (
-    <main className="h-full min-h-0 overflow-y-auto bg-background px-3 pb-8 pt-4 sm:px-6 sm:pt-6">
+    <main className="scrollbar-hide h-full min-h-0 overflow-y-auto px-3 pb-8 pt-4 sm:px-6 sm:pt-6">
       <div className="mx-auto max-w-4xl">
         <div className="mb-4 flex flex-wrap items-center gap-2">
-          <Button nativeButton={false} render={<Link href="/marketplace" />} variant="ghost" className="px-2">
+          <Button nativeButton={false} render={<Link href="/marketplace" />} variant="ghost" className="rounded-full px-3">
             <ArrowLeft className="size-4" />Back 
           </Button>
           <Button
             nativeButton={false}
             render={<Link href={`/marketplace/items/${order.id}`} />}
             variant="outline"
+            className="rounded-xl"
           >
-            View saved item page
+            View item
           </Button>
         </div>
-        <Card className="overflow-hidden rounded-sm border border-border bg-card p-0 shadow-sm ring-0">
+        <Card className="overflow-hidden rounded-2xl border border-border/70 bg-card p-0 shadow-sm">
           {photos.length > 0 ? (
             <div className="grid gap-2 bg-muted p-2 sm:grid-cols-2">
               {photos.map((photo, index) => (
-                <div key={`${order.id}-snapshot-${index}`} className="relative aspect-4/3 overflow-hidden rounded-sm bg-background">
+                <div
+                  key={`${order.id}-snapshot-${index}`}
+                  className={`relative aspect-4/3 overflow-hidden rounded-xl bg-background ${
+                    photos.length % 2 === 1 && index === photos.length - 1
+                      ? "sm:col-span-2 sm:mx-auto sm:w-1/2"
+                      : ""
+                  }`}
+                >
                   <Image src={photo} alt={`${order.listing_title} photo ${index + 1}`} fill unoptimized className="object-contain" />
                 </div>
               ))}
@@ -122,20 +134,20 @@ export default function MarketplaceOrderPage({ orderId }: { orderId: string }) {
 
           <div className="space-y-6 p-4 sm:p-6">
             <header>
-              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Order record · #{order.id.slice(0, 8)}</p>
-              <h1 className="mt-1 text-2xl font-bold">{order.listing_title}</h1>
+              <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-primary">Order record · #{order.id.slice(0, 8)}</p>
+              <h1 className="mt-1 text-2xl font-bold tracking-tight sm:text-3xl">{order.listing_title}</h1>
               <time className="mt-1 block text-sm text-muted-foreground" dateTime={order.created_at}>
                 Placed {new Date(order.created_at).toLocaleString()}
               </time>
             </header>
 
             <section aria-label="Buyer and seller" className="grid gap-3 sm:grid-cols-2">
-              <OrderParty label="Buyer" id={order.buyer_id} name={order.buyer_name} role={order.buyer_role} location={order.buyer_location} image={order.buyer_image} />
-              <OrderParty label="Seller" id={order.seller_id} name={order.seller_name} role={order.seller_role} location={order.seller_location} image={order.seller_image} />
+              <MarketplaceOrderParty label="Buyer" id={order.buyer_id} name={order.buyer_name} role={order.buyer_role} location={order.buyer_location} image={order.buyer_image} />
+              <MarketplaceOrderParty label="Seller" id={order.seller_id} name={order.seller_name} role={order.seller_role} location={order.seller_location} image={order.seller_image} />
             </section>
 
-            <section aria-label="Item details" className="space-y-3 border-t border-border pt-4">
-              <h2 className="text-base font-bold">Item details at checkout</h2>
+            <section aria-label="Item details" className="space-y-3 border-t border-border/70 pt-4">
+              <h2 className="text-base font-semibold">Item details at checkout</h2>
               <p className="whitespace-pre-wrap text-sm text-muted-foreground">{order.listing_description || "No description provided."}</p>
               <dl className="grid gap-3 text-sm sm:grid-cols-2">
                 <OrderDetail label="Category" value={order.listing_category || "Not recorded"} />
@@ -147,8 +159,8 @@ export default function MarketplaceOrderPage({ orderId }: { orderId: string }) {
               </dl>
             </section>
 
-            <section aria-label="Order amount" className="space-y-2 border-t border-border pt-4">
-              <h2 className="text-base font-bold">Order amount</h2>
+            <section aria-label="Order amount" className="space-y-2 border-t border-border/70 pt-4">
+              <h2 className="text-base font-semibold">Order amount</h2>
               <div className="flex justify-between gap-3 text-sm text-muted-foreground">
                 <span>{order.quantity} × {formatPrice(Number(order.unit_price))}</span>
                 <span>{formatPrice(Number(order.total_price))}</span>
@@ -156,7 +168,7 @@ export default function MarketplaceOrderPage({ orderId }: { orderId: string }) {
               {order.listing_previous_price != null && (
                 <p className="text-xs text-muted-foreground">Previous listed price: {formatPrice(Number(order.listing_previous_price))}</p>
               )}
-              <div className="flex justify-between border-t border-border pt-2 text-base font-bold">
+              <div className="flex justify-between border-t border-border/70 pt-2 text-base font-bold">
                 <span>Total</span><span>{formatPrice(Number(order.total_price))}</span>
               </div>
             </section>
@@ -204,7 +216,7 @@ export function OrderEngagementHistory({ sourceListingId }: { sourceListingId: s
 
   return (
     <section
-      className="mt-4 rounded-sm border border-border bg-card p-4 sm:p-5"
+      className="mt-4 rounded-2xl border border-border/70 bg-card p-4 shadow-sm sm:p-5"
       aria-label="Listing activity"
     >
       <div className="flex flex-wrap items-center gap-2">
@@ -215,22 +227,28 @@ export function OrderEngagementHistory({ sourceListingId }: { sourceListingId: s
           aria-pressed={isLiked}
           aria-label={`${isLiked ? "Liked" : "Like"}; ${likes.length} likes. Liking is disabled for this saved item.`}
           title="Likes are disabled for this saved item."
-          className="rounded-sm"
+          className="rounded-xl"
         >
           <Heart className={`size-4 ${isLiked ? "fill-current text-rose-500" : ""}`} />
           {isLiked ? "Liked" : "Like"} <span className="tabular-nums">{likes.length}</span>
         </Button>
-        <div className="inline-flex h-9 items-center gap-2 rounded-sm px-3 text-sm text-muted-foreground">
+        <div className="inline-flex h-10 items-center gap-2 rounded-xl bg-muted/50 px-3 text-sm text-muted-foreground">
           <MessageCircle aria-hidden="true" className="size-4" />
           Comments <span className="tabular-nums">{comments.length}</span>
         </div>
       </div>
       <div
         id={`listing-comments-${sourceListingId}`}
-        className="mt-4 space-y-4 border-t border-border pt-4"
+        className="mt-4 space-y-4 border-t border-border/70 pt-4"
       >
         {isLoading ? (
-          <p className="text-sm text-muted-foreground">Loading listing activity…</p>
+          <div className="space-y-3" aria-label="Loading saved item activity" aria-busy="true">
+            <Skeleton className="h-4 w-36 rounded-md" />
+            <div className="flex items-start gap-3">
+              <Skeleton className="size-9 shrink-0 rounded-full" />
+              <Skeleton className="h-16 w-3/4 rounded-2xl" />
+            </div>
+          </div>
         ) : error ? (
           <p role="alert" className="text-sm text-destructive">{error}</p>
         ) : comments.length === 0 ? (
@@ -312,36 +330,6 @@ function areArchivedCommentsGrouped(
       first.user_id === second.user_id &&
       new Date(second.created_at).getTime() - new Date(first.created_at).getTime() <=
         5 * 60 * 1000,
-  );
-}
-
-function OrderParty({
-  label,
-  id,
-  name,
-  role,
-  location,
-  image,
-}: {
-  label: string;
-  id: string;
-  name: string;
-  role: string | null;
-  location: string | null;
-  image: string | null;
-}) {
-  return (
-    <Card className="rounded-sm p-4 shadow-none ring-0">
-      <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{label}</p>
-      <div className="flex min-w-0 items-center gap-3">
-        <Avatar className="size-10"><AvatarImage src={image ?? undefined} alt="" /><AvatarFallback>{getInitials(name)}</AvatarFallback></Avatar>
-        <div className="min-w-0">
-          <p className="truncate text-sm font-bold">{name}</p>
-          <p className="truncate text-xs text-muted-foreground">{role || label} · {location || "Location not provided"}</p>
-          <p className="truncate text-[10px] text-muted-foreground">Profile ID: {id}</p>
-        </div>
-      </div>
-    </Card>
   );
 }
 

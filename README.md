@@ -53,8 +53,10 @@ do not establish authenticated user ownership.
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Yes | Public anon key used by the browser |
 | `GMAIL_USER` | Optional | Gmail account used for checkout notifications |
 | `GMAIL_APP_PASSWORD` | Optional | Gmail app password for SMTP |
-| `MARKETPLACE_SELLER_EMAIL` | Optional | Recipient for seller checkout notifications |
 
+The buyer can optionally enter an email at checkout. Sellers can optionally
+enter their email when creating a listing. Notifications go only to those
+provided addresses.
 Never put a Supabase service-role key or other server secret in a `NEXT_PUBLIC_`
 variable. The example environment file contains placeholders only.
 

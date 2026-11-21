@@ -1,6 +1,7 @@
 import type { Tables, TablesInsert } from "@/types/supabase";
 import { imageFileSchema, wallPostPayloadSchema } from "@/lib/form-schemas";
 import { apiRequest, jsonRequest } from "@/lib/api-client";
+import { broadcastRealtimeChange } from "@/lib/realtime-events";
 
 export type WallPost = Tables<"posts">;
 export const POST_IMAGE_BUCKET = "post-images";
@@ -56,6 +57,12 @@ export async function togglePostLike(
     `posts/${encodeURIComponent(postId)}/likes`,
     jsonRequest(currentlyLiked ? "DELETE" : "PUT", { profileId: userId }),
   );
+  broadcastRealtimeChange({
+    table: "posts",
+    eventType: "UPDATE",
+    newRecord: { id: postId, likes_by: result.likes_by },
+    oldRecord: {},
+  });
   return result.likes_by;
 }
 

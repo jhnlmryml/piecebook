@@ -71,7 +71,6 @@ interface ScrollerProps
   size?: number;
   offset?: number;
   withNavigation?: boolean;
-  navigationClassName?: string;
   scrollStep?: number;
   scrollTriggerMode?: "press" | "hover" | "click";
 }
@@ -88,7 +87,6 @@ function Scroller(props: ScrollerProps) {
     style,
     render,
     withNavigation = false,
-    navigationClassName,
     scrollTriggerMode = "press",
     ref,
     children,
@@ -258,7 +256,6 @@ function Scroller(props: ScrollerProps) {
           aria-label={`Scroll ${direction}`}
           onClick={scrollHandlers[direction]}
           triggerMode={scrollTriggerMode}
-          className={navigationClassName}
         />
       ));
   }, [
@@ -266,7 +263,6 @@ function Scroller(props: ScrollerProps) {
     scrollVisibility,
     scrollHandlers,
     scrollTriggerMode,
-    navigationClassName,
     withNavigation,
   ]);
 

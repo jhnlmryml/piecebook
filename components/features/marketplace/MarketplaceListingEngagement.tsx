@@ -19,6 +19,7 @@ import {
   imageFileSchema,
 } from "@/lib/form-schemas";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Scroller } from "@/components/ui/scroller";
 import { useProfile } from "@/context/ProfileContext";
 import { CommentList } from "@/components/features/comments/CommentList";
@@ -56,6 +57,7 @@ export function MarketplaceListingEngagement({
 }) {
   const { currentUser, allUsers } = useProfile();
   const [comments, setComments] = useState<MarketplaceListingComment[]>([]);
+  const [exitingCommentIds, setExitingCommentIds] = useState<Set<string>>(new Set());
   const [commentCount, setCommentCount] = useState(0);
   const [hasReachedOldestComment, setHasReachedOldestComment] = useState(false);
   const [likeCount, setLikeCount] = useState(0);
@@ -80,12 +82,33 @@ export function MarketplaceListingEngagement({
   const likeIdsRef = useRef(new Set<string>());
   const knownCommentIdsRef = useRef(new Set<string>());
   const deletedCommentIdsRef = useRef(new Set<string>());
+  const completedCommentExitsRef = useRef(new Set<string>());
   const loadedEngagementKeyRef = useRef<string | null>(null);
   const profileId = currentUser?.id;
   const engagementKey = profileId ? `${listingId}:${profileId}` : null;
   const isLoading = Boolean(engagementKey && loadedEngagementKey !== engagementKey);
   const canEngage =
     listingStatus !== "pending" && serverAllowsEngagement;
+
+  const beginCommentDissolve = useCallback((commentId: string) => {
+    if (completedCommentExitsRef.current.has(commentId)) return;
+    setExitingCommentIds((current) => new Set(current).add(commentId));
+  }, []);
+
+  const finishCommentDissolve = useCallback(
+    (comment: MarketplaceListingComment) => {
+      completedCommentExitsRef.current.add(comment.id);
+      setComments((current) =>
+        current.filter((item) => item.id !== comment.id),
+      );
+      setExitingCommentIds((current) => {
+        const next = new Set(current);
+        next.delete(comment.id);
+        return next;
+      });
+    },
+    [],
+  );
 
   const refreshEngagement = useCallback(async () => {
     if (!profileId) return;
@@ -107,6 +130,8 @@ export function MarketplaceListingEngagement({
       if (!isSameEngagement) {
         knownCommentIdsRef.current.clear();
         deletedCommentIdsRef.current.clear();
+        completedCommentExitsRef.current.clear();
+        setExitingCommentIds(new Set());
         scrollToLatestRef.current = true;
         setHasReachedOldestComment(false);
       }
@@ -115,9 +140,15 @@ export function MarketplaceListingEngagement({
       }
       setComments((current) => {
         const merged = new Map(
-          (isSameEngagement ? current : []).map((comment) => [comment.id, comment]),
+          (isSameEngagement ? current : [])
+            .filter((comment) => !deletedCommentIdsRef.current.has(comment.id))
+            .map((comment) => [comment.id, comment]),
         );
-        for (const comment of engagement.comments) merged.set(comment.id, comment);
+        for (const comment of engagement.comments) {
+          if (!deletedCommentIdsRef.current.has(comment.id)) {
+            merged.set(comment.id, comment);
+          }
+        }
         return [...merged.values()].sort(compareComments);
       });
       setCommentCount(engagement.commentCount);
@@ -205,11 +236,12 @@ export function MarketplaceListingEngagement({
       }
       if (change.eventType === "DELETE") {
         if (deletedCommentIdsRef.current.has(record.id)) return;
+        const wasKnown = knownCommentIdsRef.current.has(record.id);
         liveChangeVersion.current += 1;
         deletedCommentIdsRef.current.add(record.id);
         knownCommentIdsRef.current.delete(record.id);
         setCommentCount((count) => Math.max(0, count - 1));
-        setComments((current) => current.filter((comment) => comment.id !== record.id));
+        if (wasKnown) beginCommentDissolve(record.id);
         return;
       }
       if (change.eventType === "INSERT") {
@@ -233,7 +265,14 @@ export function MarketplaceListingEngagement({
       refreshSequence.current += 1;
       unsubscribe();
     };
-  }, [engagementKey, listingStatus, profileId, listingId, refreshEngagement]);
+  }, [
+    beginCommentDissolve,
+    engagementKey,
+    listingStatus,
+    profileId,
+    listingId,
+    refreshEngagement,
+  ]);
 
   useEffect(() => {
     const scroller = commentScrollerRef.current;
@@ -415,9 +454,7 @@ export function MarketplaceListingEngagement({
         knownCommentIdsRef.current.delete(comment.id);
         setCommentCount((count) => Math.max(0, count - 1));
       }
-      setComments((existing) =>
-        existing.filter((item) => item.id !== comment.id),
-      );
+      beginCommentDissolve(comment.id);
       if (result.storageCleanupError) {
         toast.error(`Comment deleted, but ${result.storageCleanupError}`);
       } else {
@@ -441,16 +478,16 @@ export function MarketplaceListingEngagement({
       (commentCount === 0 &&
         comments.length >= MARKETPLACE_LISTING_COMMENT_PAGE_SIZE));
   return (
-    <section className="mt-4 rounded-sm border border-border bg-card p-4 sm:p-5" aria-label="Listing activity">
+    <section className="mt-4 rounded-2xl border border-border/70 bg-card p-4 shadow-sm sm:p-5" aria-label="Listing activity">
       <div className="flex flex-wrap items-center gap-2">
         <Button
           type="button"
-          variant={isLiked ? "secondary" : "outline"}
+          variant={"ghost"}
           aria-pressed={isLiked}
           disabled={!currentUser || isLiking || isLoading || !canEngage}
           aria-busy={isLiking}
           onClick={() => void handleLike()}
-          className="rounded-sm"
+          className="rounded-xl"
         >
           {isLiking ? (
             <Loader2 aria-hidden="true" className="size-4 animate-spin" />
@@ -460,10 +497,10 @@ export function MarketplaceListingEngagement({
               className={`size-4 ${isLiked ? "fill-current text-rose-500" : ""}`}
             />
           )}
-          {isLiked ? "Liked" : "Like"}
-          <span className="tabular-nums">{likeCount}</span>
+          {/* {isLiked ? "Liked" : "Like"} */}
+          Like<span className="tabular-nums">{likeCount}</span>
         </Button>
-        <div className="inline-flex h-9 items-center gap-2 rounded-sm px-3 text-sm text-muted-foreground">
+        <div className="inline-flex h-10 items-center gap-2 rounded-xl px-3">
           <MessageCircle className="size-4" />
           Comments <span className="tabular-nums">{commentCount}</span>
         </div>
@@ -471,18 +508,23 @@ export function MarketplaceListingEngagement({
 
       <div
         id={`listing-comments-${listingId}`}
-        className="mt-4 space-y-4 border-t border-border pt-4"
+        className="mt-4 space-y-4 border-t border-border/70 pt-4"
       >
         {isLoading ? (
-          <p className="text-sm text-muted-foreground">Loading listing activity…</p>
+          <div className="space-y-3" aria-label="Loading listing activity" aria-busy="true">
+            <Skeleton className="h-4 w-36 rounded-md" />
+            <div className="flex items-start gap-3">
+              <Skeleton className="size-9 shrink-0 rounded-full" />
+              <Skeleton className="h-16 w-3/4 rounded-2xl" />
+            </div>
+          </div>
         ) : comments.length === 0 ? (
           <p className="text-sm text-muted-foreground">No comments yet. Start the conversation.</p>
         ) : (
           <>
             <Scroller
               ref={commentScrollerRef}
-              className="max-h-80 min-w-0 px-1 pt-5 pr-10 pb-6 sm:px-2 sm:pr-10"
-              navigationClassName="left-auto right-2 translate-x-0 rounded-full bg-background/90 p-1 shadow-sm"
+              className="max-h-80 min-w-0 px-1 pb-6 pt-5 sm:px-2"
               hideScrollbar
               withNavigation
               scrollShadows={false}
@@ -507,7 +549,9 @@ export function MarketplaceListingEngagement({
                 allUsers={allUsers}
                 currentUserId={currentUser?.id}
                 deletingCommentId={deletingCommentId}
+                exitingCommentIds={exitingCommentIds}
                 onDelete={handleDeleteComment}
+                onExitComplete={finishCommentDissolve}
                 canDelete={canEngage}
                 imageDescription="listing comment"
               />

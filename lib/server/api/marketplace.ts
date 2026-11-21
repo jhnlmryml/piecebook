@@ -6,6 +6,8 @@ import {
 } from "@/lib/form-schemas";
 import {
   MARKETPLACE_IMAGE_BUCKET,
+  marketplaceListingPublicColumns,
+  marketplaceListingCreatePayloadSchema,
   marketplaceListingCreateSchema,
   marketplaceListingUpdateSchema,
 } from "@/lib/marketplace-validation";
@@ -29,6 +31,10 @@ type ListingLikeRow = Tables<"marketplace_listing_likes">;
 type OrderRow = Tables<"marketplace_orders">;
 type MessageRow = Tables<"message">;
 type MessageReactionRow = Tables<"message_reactions">;
+type MarketplaceListingCreateValues = Omit<
+  z.infer<typeof marketplaceListingCreatePayloadSchema>,
+  "photos"
+>;
 
 const uuidSchema = z.string().uuid();
 const listingCommentSchema = commentPayloadSchema.extend({
@@ -96,6 +102,7 @@ function parseListingForm(formData: FormData) {
   const input = {
     sellerId: formData.get("sellerId"),
     sellerName: formData.get("sellerName"),
+    sellerEmail: formData.get("sellerEmail") ?? "",
     title: formData.get("title"),
     price: numberField("price"),
     quantity: numberField("quantity"),
@@ -136,7 +143,40 @@ function parseListingForm(formData: FormData) {
   return { input: validation.data, photoFiles };
 }
 
-async function createListing(request: Request) {
+async function insertListing(
+  input: MarketplaceListingCreateValues,
+  photos: string[],
+) {
+  const categoryDetails = Object.fromEntries(
+    Object.entries(input.categoryDetails).filter(([, value]) => value.trim()),
+  );
+  const row: TablesInsert<"marketplace_listing"> = {
+    seller_id: input.sellerId,
+    seller_name: input.sellerName,
+    seller_email: input.sellerEmail ?? null,
+    title: input.title,
+    price: input.price,
+    quantity: input.quantity,
+    location: input.location,
+    category: input.category,
+    condition: input.condition,
+    description: input.description,
+    photos,
+    category_details: categoryDetails,
+    color: categoryDetails.Color ?? null,
+    material: categoryDetails.Material ?? null,
+    status: "available",
+  };
+  const { data, error } = await getSupabaseClient()
+    .from("marketplace_listing")
+    .insert(row)
+    .select(marketplaceListingPublicColumns)
+    .single();
+  if (error) databaseError("Could not create listing", error);
+  return json(data, 201);
+}
+
+async function createListingFromFormData(request: Request) {
   const formData = await readFormData(request, 51 * 1024 * 1024);
   const { input, photoFiles } = parseListingForm(formData);
   const supabase = getSupabaseClient();
@@ -156,33 +196,7 @@ async function createListing(request: Request) {
       uploadedPaths.push(path);
       photos.push(bucket.getPublicUrl(path).data.publicUrl);
     }
-
-    const categoryDetails = Object.fromEntries(
-      Object.entries(input.categoryDetails).filter(([, value]) => value.trim()),
-    );
-    const row: TablesInsert<"marketplace_listing"> = {
-      seller_id: input.sellerId,
-      seller_name: input.sellerName,
-      title: input.title,
-      price: input.price,
-      quantity: input.quantity,
-      location: input.location,
-      category: input.category,
-      condition: input.condition,
-      description: input.description,
-      photos,
-      category_details: categoryDetails,
-      color: categoryDetails.Color ?? null,
-      material: categoryDetails.Material ?? null,
-      status: "available",
-    };
-    const { data, error } = await supabase
-      .from("marketplace_listing")
-      .insert(row)
-      .select("*")
-      .single();
-    if (error) databaseError("Could not create listing", error);
-    return json(data, 201);
+    return await insertListing(input, photos);
   } catch (error) {
     if (uploadedPaths.length > 0) {
       try {
@@ -198,12 +212,28 @@ async function createListing(request: Request) {
   }
 }
 
+async function createListing(request: Request) {
+  if (request.headers.get("content-type")?.toLowerCase().includes("multipart/form-data")) {
+    return createListingFromFormData(request);
+  }
+
+  const input = await readJson(request, marketplaceListingCreatePayloadSchema);
+  if (input.photos.some((photo) => !getListingImagePath(photo, input.sellerId))) {
+    throw new ApiError(
+      422,
+      "VALIDATION_ERROR",
+      "Listing photos must be uploaded to this seller's marketplace folder.",
+    );
+  }
+  return insertListing(input, input.photos);
+}
+
 async function listListings() {
-  const rows: ListingRow[] = [];
+  const rows: Array<Omit<ListingRow, "seller_email">> = [];
   for (let offset = 0; ; offset += 500) {
     const { data, error } = await getSupabaseClient()
       .from("marketplace_listing")
-      .select("*")
+      .select(marketplaceListingPublicColumns)
       .order("created_at", { ascending: false })
       .order("id", { ascending: true })
       .range(offset, offset + 499);
@@ -217,7 +247,7 @@ async function listListings() {
 async function getListing(listingId: string) {
   const { data, error } = await getSupabaseClient()
     .from("marketplace_listing")
-    .select("*")
+    .select(marketplaceListingPublicColumns)
     .eq("id", listingId)
     .maybeSingle();
   if (error) databaseError("Could not load marketplace listing", error);
@@ -250,7 +280,7 @@ async function updateListing(request: Request, listingId: string) {
     })
     .eq("id", listingId)
     .eq("seller_id", body.sellerId)
-    .select("*")
+    .select(marketplaceListingPublicColumns)
     .maybeSingle();
   if (error) databaseError("Could not update marketplace listing", error);
   if (!data) notFound("The listing was not found or does not belong to this profile.");

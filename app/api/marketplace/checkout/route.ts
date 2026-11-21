@@ -144,24 +144,23 @@ function buildOrderEmailHtml({
 
 async function sendOrderNotifications(
   order: MarketplaceOrder,
-  buyerEmail: string,
+  buyerEmail?: string,
+  sellerEmail?: string,
 ): Promise<EmailNotificationResult> {
+  const buyerRecipient = buyerEmail?.trim() || undefined;
+  const sellerRecipient = sellerEmail?.trim() || undefined;
+  if (!buyerRecipient && !sellerRecipient) {
+    return { buyerSent: false, sellerSent: false, errors: [] };
+  }
+
   const gmailUser = process.env.GMAIL_USER?.trim();
   const gmailAppPassword = process.env.GMAIL_APP_PASSWORD?.replace(/\s/g, "");
-  const sellerEmail = process.env.MARKETPLACE_SELLER_EMAIL?.trim();
-  const sellerEmailValidation = sellerEmail
-    ? z.string().email().safeParse(sellerEmail)
-    : null;
   const errors: string[] = [];
 
   if (!gmailUser || !gmailAppPassword) {
     console.error("Gmail SMTP is not configured for marketplace order notifications.");
     errors.push("Gmail SMTP is not configured on the server.");
     return { buyerSent: false, sellerSent: false, errors };
-  }
-  if (!sellerEmailValidation?.success) {
-    console.error("Marketplace seller email is not configured.");
-    errors.push("The seller email is not configured on the server.");
   }
 
   const transporter = nodemailer.createTransport({
@@ -200,7 +199,7 @@ async function sendOrderNotifications(
   const [buyerSent, sellerSent] = await Promise.all([
     sendEmail(
       "buyer",
-      buyerEmail.trim(),
+      buyerRecipient,
       `Purchase confirmed: ${title}`,
       `Hi ${order.buyer_name},\n\nYour purchase of "${title}" is confirmed.\nQuantity: ${order.quantity}\nTotal: ${amount}\nOrder: ${order.id}`,
       buildOrderEmailHtml({
@@ -215,7 +214,7 @@ async function sendOrderNotifications(
     ),
     sendEmail(
       "seller",
-      sellerEmailValidation?.success ? sellerEmailValidation.data : undefined,
+      sellerRecipient,
       `Your item sold: ${title}`,
       `Hi ${order.seller_name},\n\n${order.buyer_name} purchased "${title}".\nQuantity: ${order.quantity}\nTotal: ${amount}\nOrder: ${order.id}`,
       buildOrderEmailHtml({
@@ -263,10 +262,26 @@ export async function POST(request: Request) {
 
     let emailNotifications: EmailNotificationResult;
     try {
+      const { data: sellerContact, error: sellerContactError } =
+        await getSupabaseClient()
+          .from("marketplace_listing")
+          .select("seller_email")
+          .eq("id", checkoutRequest.listingId)
+          .maybeSingle();
+      if (sellerContactError) {
+        console.error(
+          "Could not load seller email for marketplace order:",
+          sellerContactError.message,
+        );
+      }
       emailNotifications = await sendOrderNotifications(
         order,
         checkoutRequest.buyerEmail,
+        sellerContact?.seller_email ?? undefined,
       );
+      if (sellerContactError) {
+        emailNotifications.errors.push("The seller email could not be loaded from the listing.");
+      }
     } catch (notificationError) {
       const message = notificationError instanceof Error
         ? notificationError.message

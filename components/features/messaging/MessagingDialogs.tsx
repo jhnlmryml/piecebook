@@ -32,9 +32,9 @@ export function MessagingDialogs({
   return (
     <>
       <AlertDialog open={deleteTarget !== null} onOpenChange={(open) => !open && onCloseMessageDialog()}>
-        <AlertDialogContent>
+        <AlertDialogContent className="rounded-2xl border-border/70 bg-card p-5 shadow-2xl sm:p-6">
           <AlertDialogHeader>
-            <AlertDialogTitle>
+            <AlertDialogTitle className="text-lg tracking-tight">
               {deleteTarget?.mode === "everyone"
                 ? "Delete this message for everyone?"
                 : "Delete this message for you?"}
@@ -57,9 +57,11 @@ export function MessagingDialogs({
         open={deleteConversationTarget !== null}
         onOpenChange={(open) => !open && onCloseConversationDialog()}
       >
-        <AlertDialogContent>
+        <AlertDialogContent className="rounded-2xl border-border/70 bg-card p-5 shadow-2xl sm:p-6">
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete this conversation for you?</AlertDialogTitle>
+            <AlertDialogTitle className="text-lg tracking-tight">
+              Delete this conversation for you?
+            </AlertDialogTitle>
             <AlertDialogDescription>
               This hides the conversation and its messages from your inbox. It does not delete
               messages for the other person.

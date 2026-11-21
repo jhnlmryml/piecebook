@@ -16,6 +16,7 @@ import {
   readJson,
   requireUuid,
 } from "@/lib/server/api-utils";
+import { marketplaceListingPublicColumns } from "@/lib/marketplace-validation";
 import { z } from "zod";
 
 type Method = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
@@ -31,6 +32,7 @@ const imageBuckets = {
   post: "post-images",
   comment: "post-images",
 } as const;
+const PROFILE_ACTIVITY_LIMIT = 30;
 type ImagePurpose = keyof typeof imageBuckets;
 
 function getImagePurpose(value: string): ImagePurpose {
@@ -158,6 +160,35 @@ async function handleProfiles(
   method: Method,
   path: string[],
 ): Promise<Response | null> {
+  if (
+    path.length === 3 &&
+    path[0] === "profiles" &&
+    path[2] === "activity" &&
+    method === "GET"
+  ) {
+    const profileId = parseQuery(path[1], uuidSchema);
+    const supabase = getSupabaseClient();
+    const [comments, listings] = await Promise.all([
+      supabase
+        .from("post_comments")
+        .select("*")
+        .eq("user_id", profileId)
+        .order("created_at", { ascending: false })
+        .order("id", { ascending: true })
+        .limit(PROFILE_ACTIVITY_LIMIT),
+      supabase
+        .from("marketplace_listing")
+        .select(marketplaceListingPublicColumns)
+        .eq("seller_id", profileId)
+        .order("created_at", { ascending: false })
+        .order("id", { ascending: true })
+        .limit(PROFILE_ACTIVITY_LIMIT),
+    ]);
+    if (comments.error) databaseError("Could not load profile comments", comments.error);
+    if (listings.error) databaseError("Could not load profile marketplace listings", listings.error);
+    return json({ comments: comments.data, listings: listings.data });
+  }
+
   if (path.length === 1 && path[0] === "profiles" && method === "GET") {
     const supabase = getSupabaseClient();
     const { data, error } = await supabase

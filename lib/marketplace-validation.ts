@@ -2,6 +2,7 @@ import { z } from "zod";
 import {
   MARKETPLACE_IMAGE_MAX_COUNT,
   imageFileSchema,
+  optionalMarketplaceEmailSchema,
 } from "@/lib/form-schemas";
 
 export type Category =
@@ -55,6 +56,8 @@ export const marketplaceConditions = [
   "Used - fair",
 ] as const;
 export const MARKETPLACE_IMAGE_BUCKET = "marketplace-listing-images";
+export const marketplaceListingPublicColumns =
+  "id,seller_id,seller_name,title,price,previous_price,location,category,condition,description,photos,category_details,color,material,quantity,status,created_at";
 
 const categorySchema = z.string().refine(
   (value): value is Category => marketplaceCategories.includes(value as Category),
@@ -113,6 +116,7 @@ export const marketplaceListingCreateFormSchema = z
   .object({
     ...listingTextFields,
     ...listingDraftNumberFields,
+    sellerEmail: optionalMarketplaceEmailSchema,
     quantity: z
       .string()
       .trim()
@@ -137,16 +141,26 @@ export const marketplaceListingUpdateFormSchema = z
   })
   .superRefine(validateCategoryDetails);
 
-export const marketplaceListingCreateSchema = z
-  .object({
-    sellerId: z.string().uuid(),
-    sellerName: z.string().trim().min(1).max(80),
-    ...listingTextFields,
-    price: listingPriceSchema,
-    quantity: listingQuantitySchema.min(1),
+const marketplaceListingCreateBaseSchema = z.object({
+  sellerId: z.string().uuid(),
+  sellerName: z.string().trim().min(1).max(80),
+  sellerEmail: optionalMarketplaceEmailSchema,
+  ...listingTextFields,
+  price: listingPriceSchema,
+  quantity: listingQuantitySchema.min(1),
+});
+
+export const marketplaceListingCreateSchema = marketplaceListingCreateBaseSchema
+  .extend({
     photoFiles: z
       .array(imageFileSchema)
       .max(MARKETPLACE_IMAGE_MAX_COUNT),
+  })
+  .superRefine(validateCategoryDetails);
+
+export const marketplaceListingCreatePayloadSchema = marketplaceListingCreateBaseSchema
+  .extend({
+    photos: z.array(z.string().url()).max(MARKETPLACE_IMAGE_MAX_COUNT),
   })
   .superRefine(validateCategoryDetails);
 
