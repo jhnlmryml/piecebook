@@ -3,7 +3,6 @@
 import {
   useCallback,
   useEffect,
-  useId,
   useMemo,
   useRef,
   useState,
@@ -15,8 +14,9 @@ import { toast } from "sonner";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { PostComposer } from "@/components/features/posts/PostComposer";
-import { useAuth } from "@/context/AuthContext";
-import { USERS } from "@/data/demo-users";
+import { PostComments } from "@/components/features/posts/PostComments";
+import { LocalDateTime } from "@/components/shared/LocalDateTime";
+import { useProfile } from "@/context/ProfileContext";
 import {
   getWallPosts,
   deleteWallPost,
@@ -26,7 +26,8 @@ import {
 } from "@/lib/posts";
 import { getInitials } from "@/lib/get-initials";
 import { WallPostSkeleton } from "@/components/shared/LoadingSkeletons";
-import { getSupabaseClient } from "@/lib/supabase";
+import { ParticleDissolve } from "@/components/shared/ParticleDissolve";
+import { subscribeToRealtimeChanges } from "@/lib/realtime-events";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -69,22 +70,25 @@ export default function WallFeed({
   showComposer = true,
   mobilePageScroll = false,
 }: WallFeedProps) {
-  const { currentUser } = useAuth();
+  const { currentUser, allUsers, realtimeStatus } = useProfile();
   const pathname = usePathname();
-  const channelId = useId().replace(/[^a-zA-Z0-9_-]/g, "");
   const [posts, setPosts] = useState<WallPost[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [realtimeStatus, setRealtimeStatus] = useState<
-    "connecting" | "connected" | "error"
-  >("connecting");
   const [likingPostIds, setLikingPostIds] = useState<string[]>([]);
   const [postToDelete, setPostToDelete] = useState<WallPost | null>(null);
   const [isDeletingPost, setIsDeletingPost] = useState(false);
+  const [exitingPostIds, setExitingPostIds] = useState<Set<string>>(new Set());
+  const postsRef = useRef(posts);
+  const completedPostExits = useRef(new Set<string>());
   const deletedPostIds = useRef(new Set<string>());
 
-  const loadPosts = useCallback(async () => {
-    setIsLoading(true);
+  useEffect(() => {
+    postsRef.current = posts;
+  }, [posts]);
+
+  const loadPosts = useCallback(async (showLoading = true) => {
+    if (showLoading) setIsLoading(true);
     setLoadError(null);
     try {
       const loadedPosts = await getWallPosts();
@@ -109,66 +113,45 @@ export default function WallFeed({
         error instanceof Error ? error.message : "Could not load wall posts.";
       setLoadError(message);
     } finally {
-      setIsLoading(false);
+      if (showLoading) setIsLoading(false);
     }
   }, []);
 
   useEffect(() => {
     // Refresh cached feed state after route changes, such as returning from a profile.
     let isCurrent = true;
-    let supabase: ReturnType<typeof getSupabaseClient> | null = null;
-    let channel:
-      | ReturnType<ReturnType<typeof getSupabaseClient>["channel"]>
-      | null = null;
-    let realtimeUnavailable = false;
+    const unsubscribe = subscribeToRealtimeChanges((change) => {
+      if (change.table !== "posts") return;
+      if (change.eventType === "DELETE") {
+        const deletedId = String(change.oldRecord.id ?? "");
+        if (!deletedId) return;
+        deletedPostIds.current.add(deletedId);
+        if (
+          postsRef.current.some((post) => post.id === deletedId) &&
+          !completedPostExits.current.has(deletedId)
+        ) {
+          setExitingPostIds((current) => new Set(current).add(deletedId));
+        }
+        return;
+      }
 
-    try {
-      supabase = getSupabaseClient();
-      channel = supabase
-        .channel(`piecebook-post-wall-${channelId}`)
-        .on(
-          "postgres_changes",
-          { event: "*", schema: "public", table: "post" },
-          (payload) => {
-            if (payload.eventType === "DELETE") {
-              const deletedId = payload.old.id;
-              deletedPostIds.current.add(deletedId);
-              setPosts((currentPosts) =>
-                currentPosts.filter((post) => post.id !== deletedId),
-              );
-              return;
-            }
-
-            const changedPost = payload.new as WallPost;
-            deletedPostIds.current.delete(changedPost.id);
-            setPosts((currentPosts) =>
-              sortPosts([
-                changedPost,
-                ...currentPosts.filter((post) => post.id !== changedPost.id),
-              ]),
-            );
-          },
-        )
-        .subscribe((status) => {
-          if (!isCurrent) return;
-          setRealtimeStatus(
-            status === "SUBSCRIBED"
-              ? "connected"
-              : status === "CHANNEL_ERROR" ||
-                  status === "TIMED_OUT" ||
-                  status === "CLOSED"
-                ? "error"
-                : "connecting",
-          );
-        });
-    } catch {
-      realtimeUnavailable = true;
-    }
+      const changedPost = change.newRecord as unknown as WallPost;
+      if (!changedPost.id) return;
+      deletedPostIds.current.delete(changedPost.id);
+      setPosts((currentPosts) => {
+        const existingPost = currentPosts.find((post) => post.id === changedPost.id);
+        if (change.eventType === "UPDATE" && !existingPost) return currentPosts;
+        const nextPost = existingPost ? { ...existingPost, ...changedPost } : changedPost;
+        return sortPosts([
+          nextPost,
+          ...currentPosts.filter((post) => post.id !== changedPost.id),
+        ]);
+      });
+    });
 
     getWallPosts()
       .then((loadedPosts) => {
         if (!isCurrent) return;
-        if (realtimeUnavailable) setRealtimeStatus("error");
         setLoadError(null);
         setPosts((currentPosts) => {
           const mergedPosts = new Map(
@@ -189,7 +172,6 @@ export default function WallFeed({
       })
       .catch((error: unknown) => {
         if (!isCurrent) return;
-        setRealtimeStatus("error");
         setLoadError(
           error instanceof Error ? error.message : "Could not load wall posts.",
         );
@@ -200,9 +182,17 @@ export default function WallFeed({
 
     return () => {
       isCurrent = false;
-      if (supabase && channel) void supabase.removeChannel(channel);
+      unsubscribe();
     };
-  }, [channelId, pathname]);
+  }, [pathname]);
+
+  useEffect(() => {
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === "visible") void loadPosts(false);
+    };
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+    return () => document.removeEventListener("visibilitychange", refreshWhenVisible);
+  }, [loadPosts]);
 
   const visiblePosts = useMemo(() => {
     const query = searchTerm.trim().toLocaleLowerCase();
@@ -213,21 +203,21 @@ export default function WallFeed({
     if (!query) return scopedPosts;
 
     return scopedPosts.filter((post) => {
-      const author = USERS.find((user) => user.id === post.user_id);
+      const author = allUsers.find((user) => user.id === post.user_id);
       return (
         post.post?.toLocaleLowerCase().includes(query) ||
         author?.full_name.toLocaleLowerCase().includes(query)
       );
     });
-  }, [currentUser?.id, posts, profileUserId, searchTerm, userOnly]);
+  }, [allUsers, currentUser?.id, posts, profileUserId, searchTerm, userOnly]);
 
   const targetUserId = profileUserId ?? currentUser?.id;
-  const targetUserName = USERS.find((user) => user.id === targetUserId)?.full_name;
+  const targetUserName = allUsers.find((user) => user.id === targetUserId)?.full_name;
   const isOwnProfile = targetUserId === currentUser?.id;
   const postsHeading = isOwnProfile
     ? "Your posts"
     : `${targetUserName ?? "Profile"}'s posts`;
-  const isViewLoading = isLoading || (userOnly && !targetUserId);
+  const isViewLoading = isLoading || (userOnly && !targetUserId && allUsers.length > 0);
 
   const addPost = useCallback((post: WallPost) => {
     setPosts((currentPosts) =>
@@ -242,7 +232,7 @@ export default function WallFeed({
       const likes = await togglePostLike(
         post.id,
         currentUser.id,
-        post.likes_by,
+        post.likes_by?.includes(currentUser.id) ?? false,
       );
       setPosts((currentPosts) =>
         currentPosts.map((item) =>
@@ -271,11 +261,12 @@ export default function WallFeed({
 
     setIsDeletingPost(true);
     try {
-      await deleteWallPost(post.id, currentUser.id);
+      const result = await deleteWallPost(post.id, currentUser.id);
+      if (result.cleanupWarning) toast.warning(result.cleanupWarning);
       deletedPostIds.current.add(post.id);
-      setPosts((currentPosts) =>
-        currentPosts.filter((item) => item.id !== post.id),
-      );
+      if (!completedPostExits.current.has(post.id)) {
+        setExitingPostIds((current) => new Set(current).add(post.id));
+      }
       setPostToDelete(null);
       toast.success("Post deleted.");
     } catch (error) {
@@ -285,6 +276,18 @@ export default function WallFeed({
     } finally {
       setIsDeletingPost(false);
     }
+  }
+
+  function finishPostDissolve(postId: string) {
+    completedPostExits.current.add(postId);
+    setPosts((currentPosts) =>
+      currentPosts.filter((post) => post.id !== postId),
+    );
+    setExitingPostIds((current) => {
+      const next = new Set(current);
+      next.delete(postId);
+      return next;
+    });
   }
 
   return (
@@ -332,7 +335,7 @@ export default function WallFeed({
       {realtimeStatus === "error" && (
         <p
           role="status"
-          className="rounded-sm border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-400/30 dark:bg-amber-400/10 dark:text-amber-200"
+          className="rounded-sm border hidden border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-400/30 dark:bg-amber-400/10 dark:text-amber-200"
         >
           Live updates could not connect. Check the Supabase Realtime
           configuration in the setup guide.
@@ -354,7 +357,7 @@ export default function WallFeed({
         ) : loadError ? (
           <div
             role="alert"
-            className="piecebook-card-surface rounded-sm border border-red-200 p-5 text-sm dark:border-red-400/30"
+            className="piecebook-card-surface rounded-xl border border-red-200 p-5 text-sm dark:border-red-400/30"
           >
             <p className="text-red-700 dark:text-red-300">{loadError}</p>
             <Button
@@ -368,51 +371,59 @@ export default function WallFeed({
               Try again
             </Button>
           </div>
-        ) : visiblePosts.length === 0 ? (
-          <div className="piecebook-card-surface rounded-sm border px-5 py-10 text-center">
-            <MessageCircle
-              aria-hidden="true"
-              className="piecebook-muted-text mx-auto size-7"
-            />
-            <p className="mt-3 text-sm font-semibold text-foreground">
-              {searchTerm.trim()
-                ? "No posts match your search."
-                : userOnly
-                  ? isOwnProfile
-                    ? "You haven't posted yet."
-                    : `${targetUserName ?? "This user"} hasn't posted yet.`
-                  : "Your wall is quiet."}
-            </p>
-            <p className="piecebook-muted-text mt-1 text-xs">
-              {searchTerm.trim()
-                ? "Try another name or keyword."
-                : userOnly
-                  ? isOwnProfile
-                    ? "Your posts will appear here when you share them."
-                    : `${targetUserName ?? "This user"}'s posts will appear here when they share them.`
-                  : "Share a thought to start the conversation."}
-            </p>
-          </div>
         ) : (
-          <div className="space-y-3 pb-1">
-            {visiblePosts.map((post) => {
-              const author = USERS.find((user) => user.id === post.user_id);
-              const isLiked = Boolean(
-                currentUser && post.likes_by?.includes(currentUser.id),
-              );
+          <>
+            {visiblePosts.length === 0 && (
+              <div className="piecebook-card-surface rounded-2xl border px-5 py-10 text-center">
+                <MessageCircle
+                  aria-hidden="true"
+                  className="piecebook-muted-text mx-auto size-7"
+                />
+                <p className="mt-3 text-sm font-semibold text-foreground">
+                  {searchTerm.trim()
+                    ? "No posts match your search."
+                    : userOnly
+                      ? !targetUserId
+                        ? "No profile is available."
+                        : isOwnProfile
+                          ? "You haven't posted yet."
+                          : `${targetUserName ?? "This user"} hasn't posted yet.`
+                      : "Your wall is quiet."}
+                </p>
+                <p className="piecebook-muted-text mt-1 text-xs">
+                  {searchTerm.trim()
+                    ? "Try another name or keyword."
+                    : userOnly
+                      ? !targetUserId
+                        ? "Add a profile to public.users in Supabase to view profile posts."
+                        : isOwnProfile
+                          ? "Your posts will appear here when you share them."
+                          : `${targetUserName ?? "This user"}'s posts will appear here when they share them.`
+                      : "Share a thought to start the conversation."}
+                </p>
+              </div>
+            )}
+            <div className="space-y-3 pb-1">
+              {visiblePosts.map((post) => {
+                const author = allUsers.find((user) => user.id === post.user_id);
+                const isLiked = Boolean(
+                  currentUser && post.likes_by?.includes(currentUser.id),
+                );
 
-              return (
-                <article
-                  key={post.id}
-                  className="piecebook-card-surface rounded-sm border"
-                >
+                return (
+                  <ParticleDissolve
+                    key={post.id}
+                    isExiting={exitingPostIds.has(post.id)}
+                    onExitComplete={() => finishPostDissolve(post.id)}
+                  >
+                    <article className="piecebook-card-surface rounded-2xl border shadow-sm transition-shadow duration-200 hover:shadow-md">
                   <div className="flex items-start gap-3 p-3 sm:p-4">
 
                     <div className="min-w-0 flex-1">
                       <div className="flex items-start justify-between gap-2">
                         <div className="flex gap-4 items-center">
                           <Avatar className="size-10 shrink-0 ">
-                          {author && (
+                          {author?.image && (
                             <AvatarImage src={author.image} alt={author.full_name} />
                           )}
                           <AvatarFallback className="piecebook-avatar-fallback">
@@ -423,15 +434,10 @@ export default function WallFeed({
                           <h3 className="piecebook-brand-text text-sm font-bold">
                             {author?.full_name ?? "Piecebook member"}
                           </h3>
-                          <time
+                          <LocalDateTime
                             className="piecebook-muted-text mt-0.5 block text-xs"
                             dateTime={post.created_at}
-                          >
-                            {new Intl.DateTimeFormat(undefined, {
-                              dateStyle: "medium",
-                              timeStyle: "short",
-                            }).format(new Date(post.created_at))}
-                          </time>
+                          />
                         </div>
                         </div>
 
@@ -466,14 +472,14 @@ export default function WallFeed({
                         )}
                       </div>
                       {post.post && (
-                        <p className="mt-3 whitespace-pre-wrap break-words text-sm leading-relaxed text-foreground">
+                        <p className="mt-3 whitespace-pre-wrap wrap-break-word text-sm leading-relaxed text-foreground">
                           {post.post}
                         </p>
                       )}
                       {post.image?.map((imageUrl, index) => (
                         <div
                           key={`${post.id}-${imageUrl}`}
-                          className="relative mt-3 aspect-[16/10] w-full overflow-hidden rounded-sm bg-muted"
+                          className="relative mt-3 aspect-16/10 w-full overflow-hidden rounded-xl bg-muted"
                         >
                           <Image
                             src={imageUrl}
@@ -485,7 +491,7 @@ export default function WallFeed({
                           />
                         </div>
                       ))}
-                      <div className="piecebook-divider mt-4 flex items-center gap-2 border-t pt-2">
+                      <div className="piecebook-divider mt-4 flex flex-wrap items-start gap-2 border-t pt-2 text-xs">
                         <Button
                           type="button"
                           variant="ghost"
@@ -493,23 +499,26 @@ export default function WallFeed({
                           disabled={!currentUser || likingPostIds.includes(post.id)}
                           aria-pressed={isLiked}
                           onClick={() => void handleLike(post)}
-                          className={`h-8 rounded-sm px-2 text-xs ${isLiked ? "piecebook-brand-text" : "piecebook-muted-text"}`}
+                          className={`h-8 rounded-sm px-2 text-xs cursor-pointer ${isLiked ? "piecebook-brand-text" : "piecebook-muted-text"}`}
                         >
                           <Heart
                             aria-hidden="true"
-                            className={`size-4 ${isLiked ? "fill-current" : ""}`}
+                            className={`size-4 ${isLiked ? "fill-rose-500 text-rose-500" : ""}`}
                           />
                           Like
                           {(post.likes_by?.length ?? 0) > 0 &&
-                            ` · ${post.likes_by?.length}`}
+                            ` ${post.likes_by?.length}`}
                         </Button>
+                        <PostComments postId={post.id} />
                       </div>
                     </div>
                   </div>
-                </article>
-              );
-            })}
-          </div>
+                    </article>
+                  </ParticleDissolve>
+                );
+              })}
+            </div>
+          </>
         )}
       </div>
       <AlertDialog

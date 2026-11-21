@@ -1,130 +1,77 @@
 import type { Tables, TablesInsert } from "@/types/supabase";
-import { getSupabaseClient } from "@/lib/supabase";
+import { imageFileSchema, wallPostPayloadSchema } from "@/lib/form-schemas";
+import { apiRequest, jsonRequest } from "@/lib/api-client";
+import { broadcastRealtimeChange } from "@/lib/realtime-events";
 
-export type WallPost = Tables<"post">;
+export type WallPost = Tables<"posts">;
 export const POST_IMAGE_BUCKET = "post-images";
 export const WALL_POST_LIMIT = 50;
 
-function getOwnedPostImagePath(
-  imageUrl: string,
-  userId: string,
-  bucketPublicUrl: string,
-): string | null {
-  try {
-    const image = new URL(imageUrl);
-    const bucket = new URL(bucketPublicUrl);
-    const bucketPrefix = `${bucket.pathname.replace(/\/+$/, "")}/`;
-
-    if (image.origin !== bucket.origin || !image.pathname.startsWith(bucketPrefix)) {
-      return null;
-    }
-
-    const encodedPath = image.pathname.slice(bucketPrefix.length);
-    const objectPath = encodedPath
-      .split("/")
-      .map((segment) => decodeURIComponent(segment))
-      .join("/");
-
-    return objectPath.startsWith(`${userId}/`) ? objectPath : null;
-  } catch {
-    return null;
+export async function uploadPostImage(file: File, profileId: string) {
+  const validation = imageFileSchema.safeParse(file);
+  if (!validation.success) {
+    throw new Error(validation.error.issues[0]?.message ?? "Choose a valid image.");
   }
+  const formData = new FormData();
+  formData.append("ownerId", profileId);
+  formData.append("file", file);
+  return apiRequest<{ path: string; url: string }>("uploads/post", {
+    method: "POST",
+    body: formData,
+  });
+}
+
+export async function removePostImages(
+  profileId: string,
+  paths: readonly string[],
+): Promise<void> {
+  if (paths.length === 0) return;
+  await apiRequest<void>(
+    "uploads/post",
+    jsonRequest("DELETE", { ownerId: profileId, paths }),
+  );
 }
 
 export async function getWallPosts(): Promise<WallPost[]> {
-  const { data, error } = await getSupabaseClient()
-    .from("post")
-    .select("*")
-    .order("created_at", { ascending: false })
-    .limit(WALL_POST_LIMIT);
-
-  if (error) throw new Error(`Could not load posts: ${error.message}`);
-  return data;
+  return apiRequest<WallPost[]>("posts");
 }
 
 export async function createWallPost(
-  post: TablesInsert<"post">,
+  post: TablesInsert<"posts">,
 ): Promise<WallPost> {
-  const { data, error } = await getSupabaseClient()
-    .from("post")
-    .insert(post)
-    .select()
-    .single();
-
-  if (error) throw new Error(`Could not publish post: ${error.message}`);
-  return data;
+  const validation = wallPostPayloadSchema.safeParse(post);
+  if (!validation.success) {
+    throw new Error(
+      validation.error.issues[0]?.message ?? "Post details are invalid.",
+    );
+  }
+  return apiRequest<WallPost>("posts", jsonRequest("POST", validation.data));
 }
 
 export async function togglePostLike(
   postId: string,
   userId: string,
-  currentLikes: string[] | null,
+  currentlyLiked: boolean,
 ): Promise<string[]> {
-  const nextLikes = currentLikes?.includes(userId)
-    ? currentLikes.filter((id) => id !== userId)
-    : [...(currentLikes ?? []), userId];
-
-  const { data, error } = await getSupabaseClient()
-    .from("post")
-    .update({ likes_by: nextLikes })
-    .eq("id", postId)
-    .select("id")
-    .single();
-
-  if (error) throw new Error(`Could not update like: ${error.message}`);
-  if (!data) throw new Error("Could not update like: post was not found.");
-  return nextLikes;
+  const result = await apiRequest<{ likes_by: string[] }>(
+    `posts/${encodeURIComponent(postId)}/likes`,
+    jsonRequest(currentlyLiked ? "DELETE" : "PUT", { profileId: userId }),
+  );
+  broadcastRealtimeChange({
+    table: "posts",
+    eventType: "UPDATE",
+    newRecord: { id: postId, likes_by: result.likes_by },
+    oldRecord: {},
+  });
+  return result.likes_by;
 }
 
 export async function deleteWallPost(
   postId: string,
-  userId: string,
-): Promise<void> {
-  const supabase = getSupabaseClient();
-  const imageBucket = supabase.storage.from(POST_IMAGE_BUCKET);
-  const bucketPublicUrl = imageBucket.getPublicUrl("").data.publicUrl;
-
-  const { data: post, error: loadError } = await supabase
-    .from("post")
-    .select("id, image")
-    .eq("id", postId)
-    .eq("user_id", userId)
-    .single();
-
-  if (loadError) {
-    throw new Error(`Could not load post images: ${loadError.message}`);
-  }
-  if (!post) throw new Error("Could not delete post: it may no longer exist.");
-
-  const imagePaths = Array.from(
-    new Set(
-      (post.image ?? [])
-        .map((imageUrl) =>
-          getOwnedPostImagePath(imageUrl, userId, bucketPublicUrl),
-        )
-        .filter((path): path is string => path !== null),
-    ),
+  profileId: string,
+): Promise<{ cleanupWarning: string | null }> {
+  return apiRequest<{ cleanupWarning: string | null }>(
+    `posts/${encodeURIComponent(postId)}?profileId=${encodeURIComponent(profileId)}`,
+    { method: "DELETE" },
   );
-
-  if (imagePaths.length > 0) {
-    const { error: storageError } = await imageBucket.remove(imagePaths);
-    if (storageError) {
-      throw new Error(`Could not delete post images: ${storageError.message}`);
-    }
-  }
-
-  const { data: deletedPost, error: deleteError } = await supabase
-    .from("post")
-    .delete()
-    .eq("id", postId)
-    .eq("user_id", userId)
-    .select("id")
-    .single();
-
-  if (deleteError) {
-    throw new Error(`Could not delete post: ${deleteError.message}`);
-  }
-  if (!deletedPost) {
-    throw new Error("Could not delete post: it may no longer exist.");
-  }
 }

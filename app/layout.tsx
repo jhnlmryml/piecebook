@@ -1,13 +1,14 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
-import { AuthProvider } from "@/context/AuthContext";
+import { ProfileProvider } from "@/context/ProfileContext";
 import {TooltipProvider} from "@/components/ui/tooltip";
 import { ThemeProvider } from "@/components/theme/ThemeProvider";
 import { Toaster as ShadcnToaster } from "@/components/ui/sonner";
+import AppShell from "@/components/layout/AppShell";
 
 export const metadata: Metadata = {
   title: {
-    default: "Piecebook — Your Wall",
+    default: "Piecebook @ JHNLMRYML",
     template: "%s | Piecebook",
   },
   description:
@@ -15,7 +16,7 @@ export const metadata: Metadata = {
   applicationName: "Piecebook",
   keywords: ["Piecebook", "social wall", "friends", "photos"],
   openGraph: {
-    title: "Piecebook — Your Wall",
+    title: "Piecebook @ JHNLMRYML",
     description:
       "A place for your friends, photos, and everyday updates — inspired by the original Facebook Wall.",
     type: "website",
@@ -23,7 +24,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#3b5998",
+  themeColor: "#2563eb",
 };
 
 export default function RootLayout({
@@ -35,10 +36,12 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning>
       <body className="h-dvh overflow-hidden antialiased">
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
-          <AuthProvider>
-            <TooltipProvider>{children}</TooltipProvider>
-            <ShadcnToaster position="top-center" richColors />
-          </AuthProvider>
+          <ProfileProvider>
+            <TooltipProvider>
+              <AppShell>{children}</AppShell>
+              <ShadcnToaster position="top-center" richColors />
+            </TooltipProvider>
+          </ProfileProvider>
         </ThemeProvider>
       </body>
     </html>

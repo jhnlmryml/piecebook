@@ -30,6 +30,12 @@ export function getSupabaseClient(): SupabaseClient<Database> {
     throw new Error("Supabase must use HTTPS in production.");
   }
 
-  client = createClient<Database>(url, anonKey);
+  client = createClient<Database>(url, anonKey, {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+      detectSessionInUrl: false,
+    },
+  });
   return client;
 }

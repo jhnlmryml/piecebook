@@ -5,52 +5,38 @@ import {
   useEffect,
   useRef,
   useState,
-  type DragEvent,
-  type FormEvent,
+  type SubmitEvent,
 } from "react";
-import { Loader2, Paperclip, Send, Upload, X } from "lucide-react";
 import { toast } from "sonner";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Button } from "@/components/ui/button";
 import {
-  FileUpload,
-  FileUploadItem,
-  FileUploadItemDelete,
-  FileUploadItemMetadata,
-  FileUploadItemPreview,
-  FileUploadItemProgress,
-  FileUploadList,
-  FileUploadTrigger,
-  type FileUploadProps,
-} from "@/components/ui/file-upload";
-import { Textarea } from "@/components/ui/textarea";
-import { useAuth } from "@/context/AuthContext";
+  imageFileSchema,
+  postDraftSchema,
+  POST_MAX_LENGTH,
+  IMAGE_MAX_COUNT,
+  IMAGE_MAX_SIZE,
+} from "@/lib/form-schemas";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import type { FileUploadProps } from "@/components/ui/file-upload";
+import { useProfile } from "@/context/ProfileContext";
 import { getInitials } from "@/lib/get-initials";
+import { PostComposerInput } from "@/components/features/posts/PostComposerInput";
 import {
   createWallPost,
-  POST_IMAGE_BUCKET,
+  removePostImages,
+  uploadPostImage,
   type WallPost,
 } from "@/lib/posts";
-import { getSupabaseClient } from "@/lib/supabase";
 
-const MAX_CHARS = 280;
-const MAX_FILES = 5;
-const MAX_FILE_SIZE = 5 * 1024 * 1024;
-const ACCEPTED_IMAGE_TYPES = new Set([
-  "image/jpeg",
-  "image/png",
-  "image/gif",
-  "image/webp",
-  "image/avif",
-]);
-const IMAGE_ACCEPT_ATTRIBUTE = Array.from(ACCEPTED_IMAGE_TYPES).join(",");
+const MAX_CHARS = POST_MAX_LENGTH;
+const MAX_FILES = IMAGE_MAX_COUNT;
+const IMAGE_ACCEPT_ATTRIBUTE = "image/*";
 
 type PostComposerProps = {
   onPostCreated: (post: WallPost) => void;
 };
 
 type UploadedImage = {
-  ownerId: string;
+  profileId: string;
   objectPath: string;
   publicUrl: string;
 };
@@ -58,7 +44,9 @@ type UploadedImage = {
 type UploadedImageMap = Map<File, UploadedImage>;
 
 export function PostComposer({ onPostCreated }: PostComposerProps) {
-  const { currentUser } = useAuth();
+  const { currentUser } = useProfile();
+  const [isExpanded, setIsExpanded] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
   const [message, setMessage] = useState("");
   const [files, setFiles] = useState<File[]>([]);
   const [uploadedImages, setUploadedImages] = useState<UploadedImageMap>(
@@ -66,25 +54,24 @@ export function PostComposer({ onPostCreated }: PostComposerProps) {
   );
   const [isUploading, setIsUploading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isDraggingOver, setIsDraggingOver] = useState(false);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const dragCounter = useRef(0);
-
-  useEffect(() => {
-    if (!isUploading && !isSubmitting) {
-      textareaRef.current?.focus();
-    }
-  }, [isSubmitting, isUploading]);
 
   const removeUnusedImages = useCallback(async (objectPaths: string[]) => {
     if (objectPaths.length === 0) return;
 
     try {
-      const { error } = await getSupabaseClient()
-        .storage.from(POST_IMAGE_BUCKET)
-        .remove(objectPaths);
-
-      if (error) throw error;
+      const pathsByProfile = new Map<string, string[]>();
+      for (const path of objectPaths) {
+        const ownerId = path.split("/")[0];
+        if (!ownerId) continue;
+        const paths = pathsByProfile.get(ownerId) ?? [];
+        paths.push(path);
+        pathsByProfile.set(ownerId, paths);
+      }
+      await Promise.all(
+        [...pathsByProfile].map(([ownerId, paths]) =>
+          removePostImages(ownerId, paths),
+        ),
+      );
     } catch (error) {
       toast.error(
         error instanceof Error
@@ -99,34 +86,21 @@ export function PostComposer({ onPostCreated }: PostComposerProps) {
     { onProgress, onSuccess, onError },
   ) => {
     if (!currentUser) {
-      toast.error("Choose a profile before uploading photos.");
+      toast.error("Choose a profile before posting.");
       return;
     }
 
     setIsUploading(true);
     try {
-      const supabase = getSupabaseClient();
-      const imageBucket = supabase.storage.from(POST_IMAGE_BUCKET);
-
       await Promise.all(
         uploadFiles.map(async (file) => {
           try {
-            const safeFileName = file.name
-              .replace(/[^a-zA-Z0-9._-]/g, "-")
-              .slice(0, 120);
-            const objectPath = `${currentUser.id}/${crypto.randomUUID()}-${safeFileName}`;
-            const { error } = await imageBucket.upload(objectPath, file, {
-              contentType: file.type,
-            });
-
-            if (error) throw error;
-
-            const { data } = imageBucket.getPublicUrl(objectPath);
+            const uploaded = await uploadPostImage(file, currentUser.id);
             setUploadedImages((images) =>
               new Map(images).set(file, {
-                ownerId: currentUser.id,
-                objectPath,
-                publicUrl: data.publicUrl,
+                profileId: currentUser.id,
+                objectPath: uploaded.path,
+                publicUrl: uploaded.url,
               }),
             );
             onProgress(file, 100);
@@ -168,79 +142,22 @@ export function PostComposer({ onPostCreated }: PostComposerProps) {
     void removeUnusedImages(removedObjectPaths);
   }, [files, removeUnusedImages, uploadedImages]);
 
-  function handleIncomingFiles(incomingFiles: File[]) {
-    if (isUploading || isSubmitting || incomingFiles.length === 0) return;
-
-    const validFiles: File[] = [];
-    for (const file of incomingFiles) {
-      if (files.length + validFiles.length >= MAX_FILES) {
-        toast.error(`Maximum of ${MAX_FILES} photos allowed.`);
-        continue;
-      }
-      if (!ACCEPTED_IMAGE_TYPES.has(file.type.toLowerCase())) {
-        toast.error(`${file.name}: This image format is not supported.`);
-        continue;
-      }
-      if (file.size > MAX_FILE_SIZE) {
-        toast.error(`${file.name}: File exceeds 5MB limit.`);
-        continue;
-      }
-      validFiles.push(file);
-    }
-
-    if (validFiles.length === 0) return;
-
-    handleFilesChange([...files, ...validFiles]);
-    void onUpload(validFiles, {
-      onProgress: () => { },
-      onSuccess: () => { },
-      onError: () => { },
+  async function handleSubmit(event: SubmitEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const validation = postDraftSchema.safeParse({
+      body: message,
+      imageFiles: files,
     });
-  }
-
-  function handleDragEnter(event: DragEvent<HTMLElement>) {
-    event.preventDefault();
-    event.stopPropagation();
-    if (isUploading || isSubmitting) return;
-
-    if (event.dataTransfer.types.includes("Files")) {
-      dragCounter.current += 1;
-      setIsDraggingOver(true);
+    if (!validation.success) {
+      toast.error(
+        validation.error.issues[0]?.message ?? "Check your post and try again.",
+      );
+      return;
     }
-  }
-
-  function handleDragOver(event: DragEvent<HTMLElement>) {
-    event.preventDefault();
-    event.stopPropagation();
-    event.dataTransfer.dropEffect = "copy";
-  }
-
-  function handleDragLeave(event: DragEvent<HTMLElement>) {
-    event.preventDefault();
-    event.stopPropagation();
-    dragCounter.current = Math.max(0, dragCounter.current - 1);
-    if (dragCounter.current === 0) setIsDraggingOver(false);
-  }
-
-  function handleDrop(event: DragEvent<HTMLElement>) {
-    event.preventDefault();
-    event.stopPropagation();
-    dragCounter.current = 0;
-    setIsDraggingOver(false);
-    handleIncomingFiles(Array.from(event.dataTransfer.files));
-  }
-
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const text = message.trim();
+    const text = validation.data.body;
 
     if (!currentUser) {
       toast.error("Choose a profile before posting.");
-      return;
-    }
-
-    if (!text && files.length === 0) {
-      toast.error("Write something or add a photo.");
       return;
     }
 
@@ -251,7 +168,7 @@ export function PostComposer({ onPostCreated }: PostComposerProps) {
 
     if (
       files.some(
-        (file) => uploadedImages.get(file)?.ownerId !== currentUser.id,
+        (file) => uploadedImages.get(file)?.profileId !== currentUser.id,
       )
     ) {
       toast.error("Remove and reattach photos after switching profiles.");
@@ -279,6 +196,7 @@ export function PostComposer({ onPostCreated }: PostComposerProps) {
       setMessage("");
       setFiles([]);
       setUploadedImages(new Map());
+      setIsExpanded(false);
       toast.success("Your post is on the wall.");
     } catch (error) {
       toast.error(
@@ -299,157 +217,100 @@ export function PostComposer({ onPostCreated }: PostComposerProps) {
     !isMissingUploadedImage &&
     (Boolean(message.trim()) || files.length > 0);
 
+  useEffect(() => {
+    if (!isExpanded) return;
+    const textarea = containerRef.current?.querySelector("textarea");
+    if (textarea instanceof HTMLTextAreaElement) {
+      textarea.focus();
+    }
+  }, [isExpanded]);
+
+  useEffect(() => {
+    if (!isExpanded) return;
+    function handlePointerDown(event: MouseEvent) {
+      if (
+        containerRef.current &&
+        !containerRef.current.contains(event.target as Node)
+      ) {
+        setIsExpanded(false);
+      }
+    }
+    function handleScroll(event: Event) {
+      const target = event.target as Node | null;
+      if (target && containerRef.current?.contains(target)) return;
+      setIsExpanded(false);
+    }
+    document.addEventListener("mousedown", handlePointerDown);
+    window.addEventListener("scroll", handleScroll, true);
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      window.removeEventListener("scroll", handleScroll, true);
+    };
+  }, [isExpanded]);
+
   return (
-    <FileUpload
-      value={files}
-      onValueChange={handleFilesChange}
-      onUpload={onUpload}
-      onFileReject={(file, reason) => toast.error(`${file.name}: ${reason}`)}
-      accept={IMAGE_ACCEPT_ATTRIBUTE}
-      maxFiles={MAX_FILES}
-      maxSize={MAX_FILE_SIZE}
-      multiple
-      disabled={isUploading || isSubmitting}
-    >
-      <form
-        onSubmit={handleSubmit}
-        onDragEnter={handleDragEnter}
-        onDragOver={handleDragOver}
-        onDragLeave={handleDragLeave}
-        onDrop={handleDrop}
-        data-dragging={isDraggingOver ? "" : undefined}
-        className="piecebook-card-surface relative flex max-h-[240px] shrink-0 flex-col overflow-hidden rounded-sm border shadow-none"
+    <div ref={containerRef} className="piecebook-card-surface rounded-2xl border shadow-sm outline-none focus:outline-none">
+      <button
+        type="button"
+        onClick={() => setIsExpanded((prev) => !prev)}
+        className="flex w-full items-center gap-3 px-3 py-2 text-left outline-none focus:outline-none focus-visible:outline-none focus-visible:ring-0"
+        aria-expanded={isExpanded}
       >
-        <div className="inline-flex items-center gap-4 piecebook-divider piecebook-muted-surface shrink-0 border-b px-4 py-1">
-          <Avatar className="mt-1 size-9 shrink-0 md:hidden block">
-            {currentUser && (
-              <AvatarImage
-                src={currentUser.image}
-                alt={currentUser.full_name}
-              />
-            )}
-            <AvatarFallback className="piecebook-avatar-fallback">
-              {currentUser ? getInitials(currentUser.full_name) : "?"}
-            </AvatarFallback>
-          </Avatar>
-          <h2 className="piecebook-brand-text text-sm font-bold">
-            Write on your wall
-          </h2>
+        <Avatar className="size-9 shrink-0">
+          {currentUser?.image && (
+            <AvatarImage src={currentUser.image} alt={currentUser.full_name} />
+          )}
+          <AvatarFallback className="piecebook-avatar-fallback">
+            {currentUser ? getInitials(currentUser.full_name) : "?"}
+          </AvatarFallback>
+        </Avatar>
+        <span className="text-sm font-semibold text-foreground">
+          Write on your wall
+        </span>
+      </button>
+      <div
+        className={`grid transition-all duration-300 ease-in-out ${
+          isExpanded ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"
+        } motion-reduce:transition-none`}
+      >
+        <div className="overflow-hidden">
+          <PostComposerInput
+            id="wall-post"
+            value={message}
+            maxLength={MAX_CHARS}
+            placeholder="What's on your mind?"
+            disabled={isUploading || isSubmitting}
+            canSubmit={canSubmit}
+            isSubmitting={isSubmitting}
+            onChange={setMessage}
+            onSubmit={handleSubmit}
+            fileUpload={{
+              value: files,
+              onValueChange: handleFilesChange,
+              onUpload,
+              onFileReject: (file, reason) => toast.error(`${file.name}: ${reason}`),
+              onFileValidate: (file) => {
+                const validation = imageFileSchema.safeParse(file);
+                return validation.success
+                  ? null
+                  : validation.error.issues[0]?.message ?? "Choose a valid image.";
+              },
+              accept: IMAGE_ACCEPT_ATTRIBUTE,
+              maxFiles: MAX_FILES,
+              maxSize: IMAGE_MAX_SIZE,
+              multiple: true,
+              showProgress: true,
+              attachmentLabel: "Attach photo",
+              dropzoneTitle: "Drag & drop photos here",
+              dropzoneDescription: `Up to ${MAX_FILES} photos, max ${IMAGE_MAX_SIZE / 1024 / 1024} MB each`,
+            }}
+            submitButtonSize="icon-lg"
+            submitButtonClassName="size-10 rounded-full bg-primary shadow-sm hover:bg-primary/90 [&_svg]:size-4"
+            submitAriaLabel="Share post"
+            showCharacterCount
+          />
         </div>
-
-        <div className="flex min-h-0 flex-1 gap-3 p-2 sm:p-3">
-
-
-          <div
-            className="relative flex min-h-0 min-w-0 flex-1 flex-col gap-1.5 overflow-hidden rounded-md border border-input bg-background px-3 py-1.5 outline-none focus-within:ring-1 focus-within:ring-ring/50"
-          >
-            <div
-              aria-hidden="true"
-              className={`pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-md border-2 border-dashed border-primary/50 bg-background/85 p-4 backdrop-blur-xs transition-opacity duration-200 ${isDraggingOver ? "opacity-100" : "opacity-0"
-                }`}
-            >
-              <div className="flex flex-col items-center gap-1 text-center">
-                <div className="flex items-center justify-center rounded-full border p-2.5">
-                  <Upload className="size-5 text-muted-foreground" />
-                </div>
-                <p className="text-sm font-medium">Drag & drop photos here</p>
-                <p className="text-xs text-muted-foreground">
-                  Up to {MAX_FILES} photos, max 5MB each
-                </p>
-              </div>
-            </div>
-
-            {files.length > 0 && (
-              <FileUploadList
-                orientation="horizontal"
-                className="h-8 max-h-8 shrink-0 overflow-x-auto px-0 py-0 scrollbar-hide"
-              >
-                {files.map((file, index) => (
-                  <FileUploadItem
-                    key={`${file.name}-${file.lastModified}-${index}`}
-                    value={file}
-                    className="relative p-0 "
-                  >
-                    <FileUploadItemPreview className="size-8 [&>svg]:size-5">
-                      <FileUploadItemProgress variant="fill" />
-                    </FileUploadItemPreview>
-                    <FileUploadItemMetadata className="sr-only" />
-                    <FileUploadItemDelete
-                      render={(props) => (
-                        <Button
-                          type="button"
-                          variant="secondary"
-                          size="icon"
-                          aria-label={`Remove ${file.name}`}
-                          className="absolute -top-1 -right-1 size-4 shrink-0 cursor-pointer rounded-full"
-                          {...props}
-                        >
-                          <X className="size-2.5" />
-                        </Button>
-                      )}
-                    />
-                  </FileUploadItem>
-                ))}
-              </FileUploadList>
-            )}
-
-            <label className="sr-only" htmlFor="wall-post">
-              Write a wall post
-            </label>
-            <Textarea
-              ref={textareaRef}
-              id="wall-post"
-              autoFocus
-              value={message}
-              onDragOver={handleDragOver}
-              onDrop={handleDrop}
-              onChange={(event) =>
-                setMessage(event.target.value.slice(0, MAX_CHARS))
-              }
-              onKeyDown={(event) => {
-                if (event.key === "Enter" && !event.shiftKey) {
-                  event.preventDefault();
-                  event.currentTarget.form?.requestSubmit();
-                }
-              }}
-              maxLength={MAX_CHARS}
-              placeholder="What's on your mind?"
-              className="field-sizing-fixed min-h-20 max-h-32 w-full flex-1 resize-none overflow-y-auto border-0 bg-transparent p-0 text-sm shadow-none scrollbar-hide focus-visible:ring-0 dark:bg-transparent"
-              disabled={isUploading || isSubmitting}
-            />
-
-            <div className="flex items-center justify-between pt-1">
-              <span className="text-xs text-muted-foreground tabular-nums">
-                {message.length}/{MAX_CHARS}
-              </span>
-
-              <div className="flex items-center gap-1.5">
-                <FileUploadTrigger
-                  render={(props) => (
-                    <Button
-                      type="button"
-                      size="icon"
-                      variant="ghost"
-                      className="size-7"
-                      {...props}
-                    >
-                      <Paperclip className="size-3.5" />
-                      <span className="sr-only">Attach photo</span>
-                    </Button>
-                  )}
-                />
-
-
-                <Button type="submit" disabled={!canSubmit} className="bg-primary hover:bg-primary/90" >
-                  Share
-                  {isSubmitting ?
-                    <Loader2 data-icon="inline-end" className="size-3.5 animate-spin" /> : <Send data-icon="inline-end" className="size-3.5" />}
-                </Button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </form>
-    </FileUpload>
+      </div>
+    </div>
   );
 }
