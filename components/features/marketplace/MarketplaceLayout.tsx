@@ -31,7 +31,7 @@ import { MarketplaceNavigation } from "./MarketplaceNavigation";
 function MarketplaceSidebarFrame({ children }: { children: ReactNode }) {
   const { activeView, activeCategory } = useMarketplaceLayout();
   const title = activeCategory ?? (
-    activeView === "selling" ? "Your listings" :
+    activeView === "selling" ? "Seller Dashboard" :
     activeView === "saved" ? "Saved items" :
     activeView === "purchases" ? "Purchase history" :
     activeView === "sales" ? "Sales history" : "Marketplace"
@@ -77,7 +77,7 @@ function MarketplaceMobileBottomNavigation() {
     { view: "saved" as const, label: "Saved items", Icon: Bookmark },
     {
       view: "selling" as const,
-      label: "Manage your listings",
+      label: "Seller Dashboard",
       Icon: ClipboardList,
     },
     { view: "purchases" as const, label: "Purchase history", Icon: ShoppingBag },

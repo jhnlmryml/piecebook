@@ -22,6 +22,8 @@
 The one canonical schema file is [`supabase-schema.sql`](./supabase-schema.sql).
 Keep schema changes in that file and update the TypeScript table types and
 data helpers when the database shape changes.
+For an existing Supabase project, apply the targeted SQL migration included
+with a schema change before relying on its database-side performance benefits.
 
 REST requests are dispatched by
 [`app/api/v1/[...path]/route.ts`](./app/api/v1/[...path]/route.ts) to

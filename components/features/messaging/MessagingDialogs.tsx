@@ -10,6 +10,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { Loader2 } from "lucide-react";
 import type { MessageDeleteTarget } from "./messaging-types";
 
 type MessagingDialogsProps = {
@@ -17,8 +18,10 @@ type MessagingDialogsProps = {
   deleteConversationTarget: string | null;
   onCloseMessageDialog: () => void;
   onDeleteMessage: () => void | Promise<void>;
+  isDeletingMessage: boolean;
   onCloseConversationDialog: () => void;
   onDeleteConversation: () => void | Promise<void>;
+  isDeletingConversation: boolean;
 };
 
 export function MessagingDialogs({
@@ -26,8 +29,10 @@ export function MessagingDialogs({
   deleteConversationTarget,
   onCloseMessageDialog,
   onDeleteMessage,
+  isDeletingMessage,
   onCloseConversationDialog,
   onDeleteConversation,
+  isDeletingConversation,
 }: MessagingDialogsProps) {
   return (
     <>
@@ -46,9 +51,10 @@ export function MessagingDialogs({
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction variant="destructive" onClick={() => void onDeleteMessage()}>
-              {deleteTarget?.mode === "everyone" ? "Delete for everyone" : "Delete for me"}
+            <AlertDialogCancel disabled={isDeletingMessage}>Cancel</AlertDialogCancel>
+            <AlertDialogAction variant="destructive" disabled={isDeletingMessage} onClick={() => void onDeleteMessage()}>
+              {isDeletingMessage && <Loader2 aria-hidden="true" className="size-4 animate-spin" />}
+              {isDeletingMessage ? "Deleting..." : deleteTarget?.mode === "everyone" ? "Delete for everyone" : "Delete for me"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -68,12 +74,14 @@ export function MessagingDialogs({
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel disabled={isDeletingConversation}>Cancel</AlertDialogCancel>
             <AlertDialogAction
               variant="destructive"
+              disabled={isDeletingConversation}
               onClick={() => void onDeleteConversation()}
             >
-              Delete conversation
+              {isDeletingConversation && <Loader2 aria-hidden="true" className="size-4 animate-spin" />}
+              {isDeletingConversation ? "Deleting..." : "Delete conversation"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

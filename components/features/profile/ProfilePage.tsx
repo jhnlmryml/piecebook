@@ -50,11 +50,11 @@ export default function ProfilePage({
                 : "Member profile"}
             </h1>
           </div>
-          <p className="hidden max-w-64 shrink-0 text-right text-xs leading-relaxed text-muted-foreground sm:block">
+          {/* <p className="hidden max-w-64 shrink-0 text-right text-xs leading-relaxed text-muted-foreground sm:block">
             {profileUser
               ? `Get to know ${profileUser.full_name} and catch up on their activity.`
               : "Your profile and activity, all in one place."}
-          </p>
+          </p> */}
         </header>
 
         <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 md:grid-cols-[minmax(220px,320px)_minmax(0,1fr)] md:grid-rows-[minmax(0,1fr)] md:gap-5 xl:gap-6">

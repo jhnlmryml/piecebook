@@ -7,7 +7,6 @@ import {
   useState,
   type SubmitEvent,
 } from "react";
-import { usePathname } from "next/navigation";
 import {
   Loader2,
   MessageCircle,
@@ -43,20 +42,29 @@ import {
   type UploadedCommentImage,
 } from "@/lib/comment-images";
 
-export function PostComments({ postId }: { postId: string }) {
+export function PostComments({
+  postId,
+  initialComments,
+  initialCommentCount,
+}: {
+  postId: string;
+  initialComments?: PostComment[];
+  initialCommentCount?: number;
+}) {
   const { currentUser, allUsers } = useProfile();
-  const pathname = usePathname();
-  const [hasLoaded, setHasLoaded] = useState(false);
+  const [hasLoaded, setHasLoaded] = useState(initialComments !== undefined);
   const [isLoading, setIsLoading] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const [draft, setDraft] = useState("");
   const [imageFiles, setImageFiles] = useState<File[]>([]);
-  const [comments, setComments] = useState<PostComment[]>([]);
+  const [comments, setComments] = useState<PostComment[]>(initialComments ?? []);
   const [exitingCommentIds, setExitingCommentIds] = useState<Set<string>>(new Set());
-  const [commentCount, setCommentCount] = useState<number | null>(null);
+  const [commentCount, setCommentCount] = useState<number | null>(initialCommentCount ?? null);
+  const [previousFeedCount, setPreviousFeedCount] = useState(initialCommentCount);
   const [hasReachedOldestComment, setHasReachedOldestComment] = useState(false);
   const countRequestId = useRef(0);
-  const loadRequestedRef = useRef(false);
+  const loadRequestedRef = useRef(initialComments !== undefined);
+  const lastFeedComments = useRef(initialComments);
   const knownCommentIds = useRef(new Set<string>());
   const deletedCommentIds = useRef(new Set<string>());
   const completedCommentExits = useRef(new Set<string>());
@@ -69,8 +77,10 @@ export function PostComments({ postId }: { postId: string }) {
   const [isLoadingOlder, setIsLoadingOlder] = useState(false);
   const isLoadingOlderRef = useRef(false);
   const [deletingCommentId, setDeletingCommentId] = useState<string | null>(null);
-  const previousPathname = useRef(pathname);
-
+  if (initialCommentCount !== previousFeedCount) {
+    setPreviousFeedCount(initialCommentCount);
+    setCommentCount(initialCommentCount ?? null);
+  }
   const beginCommentDissolve = useCallback((commentId: string) => {
     if (completedCommentExits.current.has(commentId)) return;
     setExitingCommentIds((current) => new Set(current).add(commentId));
@@ -99,6 +109,30 @@ export function PostComments({ postId }: { postId: string }) {
   }, [postId]);
 
   useEffect(() => {
+    if (!initialComments) return;
+    for (const comment of initialComments) {
+      knownCommentIds.current.add(comment.id);
+    }
+    if (initialComments === lastFeedComments.current) return;
+    lastFeedComments.current = initialComments;
+    const refreshedIds = new Set(initialComments.map((comment) => comment.id));
+    setComments((current) => {
+      const refreshed = initialComments.filter(
+        (comment) => !deletedCommentIds.current.has(comment.id),
+      );
+      const older = current.filter(
+        (comment) =>
+          !refreshedIds.has(comment.id) &&
+          !deletedCommentIds.current.has(comment.id),
+      );
+      return [...older, ...refreshed].sort(compareComments);
+    });
+    setHasLoaded(true);
+    loadRequestedRef.current = true;
+  }, [initialCommentCount, initialComments]);
+
+  useEffect(() => {
+    if (initialCommentCount !== undefined) return;
     const requestId = ++countRequestId.current;
     let isActive = true;
 
@@ -114,7 +148,7 @@ export function PostComments({ postId }: { postId: string }) {
       isActive = false;
       countRequestId.current += 1;
     };
-  }, [postId]);
+  }, [initialCommentCount, postId]);
 
   const loadComments = useCallback(async (showLoading = true) => {
     if (showLoading) setIsLoading(true);
@@ -152,24 +186,6 @@ export function PostComments({ postId }: { postId: string }) {
       void Promise.resolve().then(() => loadComments());
     }
   }, [hasLoaded, loadComments]);
-
-  useEffect(() => {
-    if (previousPathname.current === pathname) return;
-    previousPathname.current = pathname;
-    if (!hasLoaded) return;
-    void loadComments(false);
-    void refreshCommentCount();
-  }, [hasLoaded, loadComments, pathname, refreshCommentCount]);
-
-  useEffect(() => {
-    const refreshWhenVisible = () => {
-      if (document.visibilityState !== "visible" || !hasLoaded) return;
-      void loadComments(false);
-      void refreshCommentCount();
-    };
-    document.addEventListener("visibilitychange", refreshWhenVisible);
-    return () => document.removeEventListener("visibilitychange", refreshWhenVisible);
-  }, [hasLoaded, loadComments, refreshCommentCount]);
 
   useEffect(() => {
     const scroller = commentScrollerRef.current;

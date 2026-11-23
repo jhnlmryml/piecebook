@@ -30,6 +30,8 @@ export type UserProfileFields = Pick<
   | "image"
 >;
 
+let profilesRequest: Promise<UserProfile[]> | null = null;
+
 function toUserProfile(row: UserRow): UserProfile {
   return {
     id: row.id,
@@ -46,9 +48,14 @@ function toUserProfile(row: UserRow): UserProfile {
   };
 }
 
-export async function getUserProfiles(): Promise<UserProfile[]> {
-  const rows = await apiRequest<UserRow[]>("profiles");
-  return rows.map(toUserProfile);
+export function getUserProfiles(): Promise<UserProfile[]> {
+  if (profilesRequest) return profilesRequest;
+  profilesRequest = apiRequest<UserRow[]>("profiles")
+    .then((rows) => rows.map(toUserProfile))
+    .finally(() => {
+      profilesRequest = null;
+    });
+  return profilesRequest;
 }
 
 export async function saveUserProfile({

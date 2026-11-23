@@ -1,38 +1,50 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
-import { Bookmark, Heart, ImageOff, MessageCircle } from "lucide-react";
-import { useState, useSyncExternalStore } from "react";
+import { Bookmark, Heart, ImageOff, Loader2, MessageCircle } from "lucide-react";
+import { memo, useState, useSyncExternalStore } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useProfile } from "@/context/ProfileContext";
-import { formatPrice, isOwnMarketplaceListing, type Listing } from "./marketplace-data";
+import { SupabaseImageWithFallback } from "@/components/shared/SupabaseImageWithFallback";
+import { formatPrice, type Listing } from "./marketplace-data";
 import {
   getMarketplaceListingCountSnapshot,
   getServerMarketplaceListingCountSnapshot,
   subscribeToMarketplaceListingCounts,
 } from "@/lib/marketplace-listing-counts";
 
-const passthroughImageLoader = ({ src }: { src: string }) => src;
-
 type ListingCardProps = {
   listing: Listing;
   isSaved: boolean;
-  onSave: () => void;
+  canSaveListing: boolean;
+  onSaveListing: (listingId: string) => void;
 };
 
-export function ListingCard({ listing, isSaved, onSave }: ListingCardProps) {
+export const ListingCard = memo(function ListingCard({
+  listing,
+  isSaved,
+  canSaveListing,
+  onSaveListing,
+}: ListingCardProps) {
   const [imageUnavailable, setImageUnavailable] = useState(false);
-  const { currentUser, isLoading } = useProfile();
+  const [isSaving, setIsSaving] = useState(false);
   const engagementCount = useSyncExternalStore(
     subscribeToMarketplaceListingCounts,
     () => getMarketplaceListingCountSnapshot(listing.id),
     getServerMarketplaceListingCountSnapshot,
   );
   const listingHref = `/marketplace/${encodeURIComponent(listing.id)}`;
-  const canSaveListing = !isLoading && Boolean(currentUser) && listing.status === "available" && !isOwnMarketplaceListing(listing, currentUser?.id);
+
+  const handleSave = async () => {
+    if (isSaving) return;
+    setIsSaving(true);
+    try {
+      await onSaveListing(listing.id);
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   return (
     <article className="group relative min-w-0">
@@ -68,8 +80,7 @@ export function ListingCard({ listing, isSaved, onSave }: ListingCardProps) {
                 <span className="text-xs">{listing.image ? "Photo unavailable" : "No photo added"}</span>
               </span>
             ) : (
-              <Image
-                loader={passthroughImageLoader}
+              <SupabaseImageWithFallback
                 src={listing.image}
                 alt={listing.title}
                 fill
@@ -103,12 +114,14 @@ export function ListingCard({ listing, isSaved, onSave }: ListingCardProps) {
           size="icon"
           aria-label={isSaved ? `Remove ${listing.title} from saved items` : `Save ${listing.title}`}
           aria-pressed={isSaved}
-          onClick={onSave}
+          disabled={isSaving}
+          aria-busy={isSaving}
+          onClick={() => void handleSave()}
           className={`absolute right-2.5 top-2.5 size-9 rounded-full border border-border/70 bg-card/95 shadow-sm backdrop-blur transition hover:scale-105 hover:bg-card ${isSaved ? "text-primary" : "text-foreground"}`}
         >
-          <Bookmark className={`size-4 ${isSaved ? "fill-current" : ""}`} />
+          {isSaving ? <Loader2 className="size-4 animate-spin" /> : <Bookmark className={`size-4 ${isSaved ? "fill-current" : ""}`} />}
         </Button>
       )}
     </article>
   );
-}
+});

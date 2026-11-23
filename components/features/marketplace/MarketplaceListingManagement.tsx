@@ -122,8 +122,9 @@ export function MarketplaceListingManagement({
         type="button"
         variant="outline"
         onClick={openEditor}
+        disabled={listing.status === "pending"}
         aria-label="Edit listing"
-        title="Edit listing"
+        title={listing.status === "pending" ? "A checkout is in progress for this listing" : "Edit listing"}
         className="h-11 shrink-0 gap-1.5 rounded-xl px-2.5 text-xs font-semibold sm:text-sm"
       >
           <Pencil className="size-4" />Edit
@@ -132,8 +133,9 @@ export function MarketplaceListingManagement({
         type="button"
         variant="destructive"
         onClick={() => setIsDeleteOpen(true)}
+        disabled={listing.status === "pending"}
         aria-label="Delete listing"
-        title="Delete listing"
+        title={listing.status === "pending" ? "A checkout is in progress for this listing" : "Delete listing"}
         className="h-11 shrink-0 gap-1.5 rounded-xl px-2.5 text-xs font-semibold sm:text-sm"
       >
           <Trash2 className="size-4" />Delete

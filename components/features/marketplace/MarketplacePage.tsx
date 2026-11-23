@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type SubmitEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type SubmitEvent } from "react";
+import dynamic from "next/dynamic";
 import Image from "next/image";
 import {
   ArrowLeft,
@@ -37,7 +38,6 @@ import {
 import { useProfile } from "@/context/ProfileContext";
 import { ListingCard } from "./ListingCard";
 import { ListingDetailsView } from "./ListingDetailsView";
-import { MarketplaceOrderHistory } from "./MarketplaceOrderHistory";
 
 import { useMarketplaceLayout } from "./MarketplaceLayoutContext";
 import { MarketplaceSearchFilters } from "./MarketplaceSearchFilters";
@@ -47,6 +47,7 @@ import {
   formatPrice,
   getMarketplaceListingsSnapshot,
   getServerMarketplaceListingsSnapshot,
+  isOwnMarketplaceListing,
   marketplaceCategories,
   marketplaceConditions,
   marketplaceListingCreateFormSchema,
@@ -55,6 +56,15 @@ import {
   type Listing,
 } from "./marketplace-data";
 import { MarketplaceListingsSkeleton, MarketplaceOrderHistorySkeleton } from "@/components/shared/LoadingSkeletons";
+
+const MarketplaceOrderHistory = dynamic(
+  () => import("./MarketplaceOrderHistory").then((module) => module.MarketplaceOrderHistory),
+  { loading: () => <MarketplaceOrderHistorySkeleton /> },
+);
+const MarketplaceSellerDashboard = dynamic(
+  () => import("./MarketplaceSellerDashboard").then((module) => module.MarketplaceSellerDashboard),
+  { loading: () => <MarketplaceListingsSkeleton /> },
+);
 
 type NewListingPhoto = {
   file: File;
@@ -117,6 +127,10 @@ export default function MarketplacePage() {
   const [newCondition, setNewCondition] = useState("Used - good");
   const [newCategoryDetails, setNewCategoryDetails] = useState<Record<string, string>>({});
   const [isPublishing, setIsPublishing] = useState(false);
+  const saveListing = useCallback(
+    (listingId: string) => toggleSavedListing(listingId),
+    [toggleSavedListing],
+  );
 
   useEffect(() => () => {
     previewPhotoUrls.current.forEach((url) => URL.revokeObjectURL(url));
@@ -274,7 +288,7 @@ export default function MarketplacePage() {
 
   const pageTitle =
     activeView === "selling"
-      ? "Manage your listings"
+      ? "Seller Dashboard"
       : activeView === "saved"
         ? "Saved items"
         : searchTerm
@@ -314,7 +328,38 @@ export default function MarketplacePage() {
   };
 
   const historyContent =
-    activeView === "purchases" || activeView === "sales"
+    activeView === "selling"
+      ? isProfileLoading
+        ? (
+          <main className="scrollbar-hide h-full min-h-0 overflow-y-auto bg-background px-3 py-5 sm:px-5 lg:px-8" aria-busy="true" aria-label="Loading seller dashboard">
+            <div className="mx-auto w-full max-w-7xl space-y-5">
+              <div className="h-24 animate-pulse rounded-2xl bg-muted/70" />
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                {Array.from({ length: 4 }, (_, index) => <div key={index} className="h-28 animate-pulse rounded-2xl bg-muted/70" />)}
+              </div>
+              <div className="h-64 animate-pulse rounded-2xl bg-muted/70" />
+            </div>
+          </main>
+        )
+        : !currentUser
+          ? (
+            <main className="flex h-full items-center justify-center bg-background p-4">
+              <Card className="max-w-md rounded-2xl border bg-card p-6 text-center shadow-sm">
+                <h1 className="text-lg font-semibold">Choose a profile</h1>
+                <p className="mt-1 text-sm text-muted-foreground">Choose a profile before opening the Seller Dashboard.</p>
+              </Card>
+            </main>
+          )
+          : (
+            <MarketplaceSellerDashboard
+              key={currentUser.id}
+              listings={listings}
+              listingsStatus={listingsSnapshot.status}
+              listingsError={listingsSnapshot.error}
+              onRefreshListings={() => { void refreshMarketplaceListings(); }}
+            />
+          )
+      : activeView === "purchases" || activeView === "sales"
       ? isProfileLoading
         ? (
           <main className="scrollbar-hide h-full min-h-0 overflow-y-auto bg-background px-3 py-4 sm:px-5 lg:px-8">
@@ -408,7 +453,15 @@ export default function MarketplacePage() {
             </Card>
           ) : filteredListings.length > 0 ? (
             <div className="grid w-full min-w-0 grid-cols-2 gap-3 sm:grid-cols-[repeat(auto-fill,minmax(13rem,1fr))] sm:gap-4">
-              {filteredListings.map((listing) => <ListingCard key={listing.id} listing={listing} isSaved={savedListingIds.includes(listing.id)} onSave={() => toggleSavedListing(listing.id)} />)}
+              {filteredListings.map((listing) => (
+                <ListingCard
+                  key={listing.id}
+                  listing={listing}
+                  isSaved={savedListingIds.includes(listing.id)}
+                  canSaveListing={!isProfileLoading && Boolean(currentUser) && listing.status === "available" && !isOwnMarketplaceListing(listing, currentUser?.id)}
+                  onSaveListing={saveListing}
+                />
+              ))}
             </div>
           ) : (
             <Card className="rounded-2xl border bg-card px-5 py-12 text-center shadow-sm">
@@ -504,7 +557,7 @@ export default function MarketplacePage() {
                           <SelectTrigger id="listing-category" className="h-12 w-full rounded-xl text-sm">
                             <SelectValue placeholder="Choose a category" />
                           </SelectTrigger>
-                          <SelectContent>
+                          <SelectContent className={"max-h-52"}>
                       {marketplaceCategories.map((label) => <SelectItem key={label} value={label}>{label}</SelectItem>)}
                           </SelectContent>
                         </Select>
@@ -528,18 +581,18 @@ export default function MarketplacePage() {
                   </section>
 
                   <section aria-labelledby="listing-seller-email-heading" className="mt-6 space-y-3">
-                    <div>
+                    {/* <div>
                       <h2 id="listing-seller-email-heading" className="text-base font-semibold">
                         Seller contact email
                       </h2>
-                      <p className="text-sm text-muted-foreground">
-                        Optional. We’ll use this for order notifications to you.
-                      </p>
-                    </div>
+                    </div> */}
                     <div className="space-y-1.5">
                       <label htmlFor="listing-seller-email" className="text-sm font-medium">
                         Seller email (use to send an email)
                       </label>
+                      <p className="text-sm text-muted-foreground">
+                        Optional. We’ll use this for order notifications to you.
+                      </p>
                       <Input
                         id="listing-seller-email"
                         type="email"

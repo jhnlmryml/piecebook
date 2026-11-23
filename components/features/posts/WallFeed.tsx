@@ -9,7 +9,7 @@ import {
 } from "react";
 import { usePathname } from "next/navigation";
 import Image from "next/image";
-import { Ellipsis, Heart, MessageCircle, RefreshCw, Trash2 } from "lucide-react";
+import { Ellipsis, Heart, Loader2, MessageCircle, RefreshCw, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -23,8 +23,10 @@ import {
   togglePostLike,
   WALL_POST_LIMIT,
   type WallPost,
+  type WallPostFeedItem,
 } from "@/lib/posts";
 import { getInitials } from "@/lib/get-initials";
+import { isSupabasePublicImage } from "@/lib/is-supabase-public-image";
 import { WallPostSkeleton } from "@/components/shared/LoadingSkeletons";
 import { ParticleDissolve } from "@/components/shared/ParticleDissolve";
 import { subscribeToRealtimeChanges } from "@/lib/realtime-events";
@@ -53,7 +55,7 @@ type WallFeedProps = {
   mobilePageScroll?: boolean;
 };
 
-function sortPosts(posts: WallPost[]) {
+function sortPosts<T extends WallPost>(posts: T[]) {
   return [...posts]
     .sort(
     (first, second) =>
@@ -72,7 +74,7 @@ export default function WallFeed({
 }: WallFeedProps) {
   const { currentUser, allUsers, realtimeStatus } = useProfile();
   const pathname = usePathname();
-  const [posts, setPosts] = useState<WallPost[]>([]);
+  const [posts, setPosts] = useState<WallPostFeedItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [likingPostIds, setLikingPostIds] = useState<string[]>([]);
@@ -141,7 +143,9 @@ export default function WallFeed({
       setPosts((currentPosts) => {
         const existingPost = currentPosts.find((post) => post.id === changedPost.id);
         if (change.eventType === "UPDATE" && !existingPost) return currentPosts;
-        const nextPost = existingPost ? { ...existingPost, ...changedPost } : changedPost;
+        const nextPost = existingPost
+          ? { ...existingPost, ...changedPost }
+          : { ...changedPost, comments: [], commentCount: 0 };
         return sortPosts([
           nextPost,
           ...currentPosts.filter((post) => post.id !== changedPost.id),
@@ -221,7 +225,10 @@ export default function WallFeed({
 
   const addPost = useCallback((post: WallPost) => {
     setPosts((currentPosts) =>
-      sortPosts([post, ...currentPosts.filter((item) => item.id !== post.id)]),
+      sortPosts([
+        { ...post, comments: [], commentCount: 0 },
+        ...currentPosts.filter((item) => item.id !== post.id),
+      ]),
     );
   }, []);
 
@@ -364,11 +371,16 @@ export default function WallFeed({
               type="button"
               variant="outline"
               size="sm"
+               disabled={isLoading}
               onClick={() => void loadPosts()}
               className="mt-3 rounded-sm"
             >
-              <RefreshCw aria-hidden="true" className="size-3.5" />
-              Try again
+               {isLoading ? (
+                 <Loader2 aria-hidden="true" className="size-3.5 animate-spin" />
+               ) : (
+                 <RefreshCw aria-hidden="true" className="size-3.5" />
+               )}
+               {isLoading ? "Loading..." : "Try again"}
             </Button>
           </div>
         ) : (
@@ -416,7 +428,7 @@ export default function WallFeed({
                     isExiting={exitingPostIds.has(post.id)}
                     onExitComplete={() => finishPostDissolve(post.id)}
                   >
-                    <article className="piecebook-card-surface rounded-2xl border shadow-sm transition-shadow duration-200 hover:shadow-md">
+                    <article className="piecebook-card-surface rounded-2xl border shadow-sm transition-shadow duration-200 hover:shadow-md [content-visibility:auto] [contain-intrinsic-size:auto_32rem]">
                   <div className="flex items-start gap-3 p-3 sm:p-4">
 
                     <div className="min-w-0 flex-1">
@@ -486,7 +498,7 @@ export default function WallFeed({
                             alt={`Photo ${index + 1} shared by ${author?.full_name ?? "a Piecebook member"}`}
                             fill
                             sizes="(max-width: 768px) 100vw, 680px"
-                            unoptimized
+                            unoptimized={!isSupabasePublicImage(imageUrl)}
                             className="object-contain"
                           />
                         </div>
@@ -497,19 +509,24 @@ export default function WallFeed({
                           variant="ghost"
                           size="sm"
                           disabled={!currentUser || likingPostIds.includes(post.id)}
+                           aria-busy={likingPostIds.includes(post.id)}
                           aria-pressed={isLiked}
                           onClick={() => void handleLike(post)}
                           className={`h-8 rounded-sm px-2 text-xs cursor-pointer ${isLiked ? "piecebook-brand-text" : "piecebook-muted-text"}`}
                         >
-                          <Heart
-                            aria-hidden="true"
-                            className={`size-4 ${isLiked ? "fill-rose-500 text-rose-500" : ""}`}
-                          />
+                           <Heart
+                             aria-hidden="true"
+                             className={`size-4 ${isLiked ? "fill-rose-500 text-rose-500" : ""}`}
+                           />
                           Like
                           {(post.likes_by?.length ?? 0) > 0 &&
                             ` ${post.likes_by?.length}`}
                         </Button>
-                        <PostComments postId={post.id} />
+                        <PostComments
+                          postId={post.id}
+                          initialComments={post.comments}
+                          initialCommentCount={post.commentCount}
+                        />
                       </div>
                     </div>
                   </div>

@@ -18,7 +18,6 @@ import {
   MessageContent,
   MessageFooter,
   MessageGroup as MessageGroupList,
-  MessageHeader,
 } from "@/components/ui/message";
 import { Scroller } from "@/components/ui/scroller";
 import {
@@ -49,6 +48,7 @@ type MessagingThreadProps = {
   exitingMessageIds: ReadonlySet<string>;
   onViewListing: () => void;
   onReact: (messageId: string, reaction: string) => void | Promise<void>;
+  reactingMessageIds: ReadonlySet<string>;
   onCopy: (body: string) => void | Promise<void>;
   onEdit: (message: MessageWithReactions) => void;
   onDelete: (target: MessageDeleteTarget) => void;
@@ -65,6 +65,7 @@ type MessageBubbleProps = {
   marketplaceOrder: MarketplaceOrder | null | undefined;
   onViewListing: () => void;
   onReact: (messageId: string, reaction: string) => void | Promise<void>;
+  reactingMessageIds: ReadonlySet<string>;
   onCopy: (body: string) => void | Promise<void>;
   onEdit: (message: MessageWithReactions) => void;
   onDelete: (target: MessageDeleteTarget) => void;
@@ -80,6 +81,7 @@ function MessageBubble({
   marketplaceOrder,
   onViewListing,
   onReact,
+  reactingMessageIds,
   onCopy,
   onEdit,
   onDelete,
@@ -173,6 +175,7 @@ function MessageBubble({
                     }`}
                     aria-pressed={currentReaction?.reaction === emoji}
                     onClick={() => void onReact(message.id, emoji)}
+                    disabled={reactingMessageIds.has(message.id)}
                     className="h-6 min-w-7 shrink-0 rounded-full px-1.5 text-xs"
                   >
                     {emoji}
@@ -197,6 +200,7 @@ function MessageBubble({
                 aria-label={`${currentReaction?.reaction === emoji ? "Remove" : "React with"} ${emoji}`}
                 aria-pressed={currentReaction?.reaction === emoji}
                 onClick={() => void onReact(message.id, emoji)}
+                disabled={reactingMessageIds.has(message.id)}
                 className={`size-8 justify-center rounded-full px-0 py-1 text-lg ${
                   currentReaction?.reaction === emoji
                     ? "bg-accent text-accent-foreground"
@@ -261,6 +265,7 @@ export function MessagingThread({
   exitingMessageIds,
   onViewListing,
   onReact,
+  reactingMessageIds,
   onCopy,
   onEdit,
   onDelete,
@@ -357,6 +362,7 @@ export function MessagingThread({
                             }
                             onViewListing={onViewListing}
                             onReact={onReact}
+                            reactingMessageIds={reactingMessageIds}
                             onCopy={onCopy}
                             onEdit={onEdit}
                             onDelete={onDelete}

@@ -4,8 +4,13 @@ import { apiRequest, jsonRequest } from "@/lib/api-client";
 import { broadcastRealtimeChange } from "@/lib/realtime-events";
 
 export type WallPost = Tables<"posts">;
+export type WallPostFeedItem = WallPost & {
+  comments?: Tables<"post_comments">[];
+  commentCount?: number;
+};
 export const POST_IMAGE_BUCKET = "post-images";
 export const WALL_POST_LIMIT = 50;
+let wallPostsRequest: Promise<WallPostFeedItem[]> | null = null;
 
 export async function uploadPostImage(file: File, profileId: string) {
   const validation = imageFileSchema.safeParse(file);
@@ -32,8 +37,12 @@ export async function removePostImages(
   );
 }
 
-export async function getWallPosts(): Promise<WallPost[]> {
-  return apiRequest<WallPost[]>("posts");
+export function getWallPosts(): Promise<WallPostFeedItem[]> {
+  if (wallPostsRequest) return wallPostsRequest;
+  wallPostsRequest = apiRequest<WallPostFeedItem[]>("posts").finally(() => {
+    wallPostsRequest = null;
+  });
+  return wallPostsRequest;
 }
 
 export async function createWallPost(

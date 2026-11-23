@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
-import Image from "next/image";
 import {
   Bookmark,
   ChevronDown,
@@ -9,6 +8,7 @@ import {
   ChevronRight,
   ChevronUp,
   ImageOff,
+  Loader2,
   MessageCircle,
   ShoppingBag,
 } from "lucide-react";
@@ -16,9 +16,8 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { useProfile } from "@/context/ProfileContext";
 import { getInitials } from "@/lib/get-initials";
+import { SupabaseImageWithFallback } from "@/components/shared/SupabaseImageWithFallback";
 import { formatPrice, isOwnMarketplaceListing, type Listing } from "./marketplace-data";
-
-const passthroughImageLoader = ({ src }: { src: string }) => src;
 
 type ListingPhotoGalleryProps = {
   listing: Listing;
@@ -71,8 +70,7 @@ export function ListingPhotoGallery({
   return (
     <div className={`pointer-events-none relative flex min-h-72 items-center justify-center overflow-hidden bg-muted/40 ${className}`}>
       <div className="pointer-events-none absolute inset-0">
-        <Image
-          loader={passthroughImageLoader}
+        <SupabaseImageWithFallback
           src={activeImage}
           alt={listing.title}
           fill
@@ -99,7 +97,7 @@ export function ListingPhotoGallery({
                 aria-current={activeIndex === index}
                 className={`relative size-12 touch-manipulation overflow-hidden rounded-xl border-2 shadow-sm transition ${activeIndex === index ? "border-primary" : "border-white/70"}`}
               >
-                <Image src={photo} alt="" fill unoptimized className="object-cover" />
+                <SupabaseImageWithFallback src={photo} alt="" fill sizes="48px" className="object-cover" />
               </button>
             ))}
           </div>
@@ -117,6 +115,8 @@ type ListingDetailsPanelProps = {
   onViewMessages?: () => void;
   managementActions?: ReactNode;
   onCheckout?: () => void;
+  checkoutDisabled?: boolean;
+  checkoutNotice?: ReactNode;
   priceLabel?: string;
   showListed?: boolean;
   className?: string;
@@ -130,12 +130,15 @@ export function ListingDetailsPanel({
   onViewMessages,
   managementActions,
   onCheckout,
+  checkoutDisabled = false,
+  checkoutNotice,
   priceLabel,
   showListed = true,
   className = "",
 }: ListingDetailsPanelProps) {
   const { currentUser, isLoading } = useProfile();
   const [isDescriptionExpanded, setIsDescriptionExpanded] = useState(false);
+  const [pendingAction, setPendingAction] = useState<"save" | "message" | "messages" | "checkout" | null>(null);
   const isOwnListing = isOwnMarketplaceListing(listing, currentUser?.id);
   const canUseSellerActions = !isLoading && Boolean(currentUser) && !isOwnListing;
   const sellerName = isOwnListing ? currentUser?.full_name ?? "You" : listing.seller;
@@ -147,6 +150,16 @@ export function ListingDetailsPanel({
     ...(listing.material && !detailKeys.has("material") ? [["Material", listing.material] as const] : []),
   ];
   const allCategoryDetails = [...categoryDetails, ...additionalDetails];
+
+  const runAction = async (action: Exclude<typeof pendingAction, null>, callback: () => void | Promise<void>) => {
+    if (pendingAction) return;
+    setPendingAction(action);
+    try {
+      await callback();
+    } finally {
+      setPendingAction(null);
+    }
+  };
 
   return (
     <section className={`scrollbar-hide flex min-h-0 min-w-0 flex-col overflow-y-auto p-4 sm:p-6 ${className}`} aria-label="Listing details">
@@ -164,8 +177,8 @@ export function ListingDetailsPanel({
 
       {canUseSellerActions && (onMessage || onSave) && (
         <div className="mt-4 grid grid-cols-2 gap-2">
-          {onMessage && <Button type="button" onClick={onMessage} className="h-11 rounded-xl font-semibold shadow-sm"><MessageCircle className="size-4" />Message</Button>}
-          {onSave && <Button type="button" variant="secondary" onClick={onSave} className="h-11 rounded-xl font-semibold"><Bookmark className={`size-4 ${isSaved ? "fill-current" : ""}`} />{isSaved ? "Saved" : "Save"}</Button>}
+          {onMessage && <Button type="button" disabled={pendingAction !== null} aria-busy={pendingAction === "message"} onClick={() => void runAction("message", onMessage)} className="h-11 rounded-xl font-semibold shadow-sm">{pendingAction === "message" ? <Loader2 className="size-4 animate-spin" /> : <MessageCircle className="size-4" />}Message</Button>}
+          {onSave && <Button type="button" variant="secondary" disabled={pendingAction !== null} aria-busy={pendingAction === "save"} onClick={() => void runAction("save", onSave)} className="h-11 rounded-xl font-semibold">{pendingAction === "save" ? <Loader2 className="size-4 animate-spin" /> : <Bookmark className={`size-4 ${isSaved ? "fill-current" : ""}`} />}{isSaved ? "Saved" : "Save"}</Button>}
         </div>
       )}
       {(onViewMessages || managementActions) && (
@@ -174,10 +187,12 @@ export function ListingDetailsPanel({
             <Button
               type="button"
               variant="secondary"
-              onClick={onViewMessages}
+              disabled={pendingAction !== null}
+              aria-busy={pendingAction === "messages"}
+              onClick={() => void runAction("messages", onViewMessages)}
               className="h-11 min-w-0 flex-1 rounded-xl px-2.5 text-xs font-semibold sm:text-sm"
             >
-              <MessageCircle className="size-4 shrink-0" />
+              {pendingAction === "messages" ? <Loader2 className="size-4 shrink-0 animate-spin" /> : <MessageCircle className="size-4 shrink-0" />}
               <span className="truncate">View messages</span>
             </Button>
           )}
@@ -189,11 +204,12 @@ export function ListingDetailsPanel({
           {listing.quantity} {listing.quantity === 1 ? "item" : "items"} available
         </p>
       )}
-      {onCheckout && (
-        <Button type="button" onClick={onCheckout} className="mt-3 h-11 w-full rounded-xl font-semibold shadow-sm">
-          <ShoppingBag className="size-4" />Checkout
+      {(onCheckout || checkoutDisabled) && (
+        <Button type="button" disabled={pendingAction !== null || checkoutDisabled} aria-busy={pendingAction === "checkout"} onClick={() => onCheckout && void runAction("checkout", onCheckout)} className="mt-3 h-11 w-full rounded-xl font-semibold shadow-sm">
+          {pendingAction === "checkout" ? <Loader2 className="size-4 animate-spin" /> : <ShoppingBag className="size-4" />}Buy now
         </Button>
       )}
+      {checkoutNotice && <p className="mt-3 rounded-xl bg-muted/60 px-3 py-2 text-xs leading-relaxed text-muted-foreground">{checkoutNotice}</p>}
 
       <div className="mt-5 border-t border-border/70 pt-4">
         <h2 className="text-sm font-semibold">Details</h2>
@@ -253,6 +269,8 @@ export function ListingDetailsView({
   onViewMessages,
   managementActions,
   onCheckout,
+  checkoutDisabled,
+  checkoutNotice,
   priceLabel,
   showListed,
   className,
@@ -262,7 +280,7 @@ export function ListingDetailsView({
   return (
     <div className={`${layoutClassName} ${className ?? ""}`}>
       <ListingPhotoGallery listing={listing} photos={photos} activeIndex={activeIndex} onActiveIndexChange={onActiveIndexChange} className={imageClassName} />
-      <ListingDetailsPanel listing={listing} isSaved={isSaved} onSave={onSave} onMessage={onMessage} onViewMessages={onViewMessages} managementActions={managementActions} onCheckout={onCheckout} priceLabel={priceLabel} showListed={showListed} />
+      <ListingDetailsPanel listing={listing} isSaved={isSaved} onSave={onSave} onMessage={onMessage} onViewMessages={onViewMessages} managementActions={managementActions} onCheckout={onCheckout} checkoutDisabled={checkoutDisabled} checkoutNotice={checkoutNotice} priceLabel={priceLabel} showListed={showListed} />
     </div>
   );
 }

@@ -380,10 +380,11 @@ export async function getMarketplaceListingEngagementArchive(sourceListingId: st
   );
 }
 
-export async function getMarketplaceOrderRecord(orderId: string): Promise<MarketplaceOrder | null> {
+export async function getMarketplaceOrderRecord(orderId: string, profileId: string): Promise<MarketplaceOrder | null> {
   try {
+    const query = new URLSearchParams({ profileId });
     return await apiRequest<MarketplaceOrder>(
-      `marketplace/orders/${encodeURIComponent(orderId)}`,
+      `marketplace/orders/${encodeURIComponent(orderId)}?${query.toString()}`,
     );
   } catch (error) {
     if (error instanceof ApiRequestError && error.status === 404) return null;
@@ -392,20 +393,46 @@ export async function getMarketplaceOrderRecord(orderId: string): Promise<Market
 }
 
 export type MarketplaceOrder = Tables<"marketplace_orders">;
+export type MarketplacePublicOrderSnapshot = Pick<
+  MarketplaceOrder,
+  | "id"
+  | "listing_id"
+  | "source_listing_id"
+  | "seller_name"
+  | "seller_image"
+  | "listing_title"
+  | "listing_previous_price"
+  | "listing_category"
+  | "listing_condition"
+  | "listing_description"
+  | "listing_location"
+  | "listing_photos"
+  | "listing_category_details"
+  | "listing_color"
+  | "listing_material"
+  | "unit_price"
+  | "created_at"
+>;
+
+export async function getPublicMarketplaceOrderRecord(orderId: string): Promise<MarketplacePublicOrderSnapshot | null> {
+  try {
+    return await apiRequest<MarketplacePublicOrderSnapshot>(
+      `marketplace/orders/${encodeURIComponent(orderId)}/public`,
+    );
+  } catch (error) {
+    if (error instanceof ApiRequestError && error.status === 404) return null;
+    throw error;
+  }
+}
+
 export type MarketplaceListingLikeArchive = Tables<"marketplace_listing_like_archive">;
 export type MarketplaceListingCommentArchive = Tables<"marketplace_listing_comment_archive">;
-export type MarketplaceOrderEmailNotifications = {
-  buyerSent: boolean;
-  sellerSent: boolean;
-  errors: string[];
-};
-
 export async function checkoutMarketplaceListing(input: {
   listingId: string;
   buyerId: string;
   quantity: number;
   buyerEmail?: string;
-}): Promise<{ order: MarketplaceOrder; emailNotifications: MarketplaceOrderEmailNotifications }> {
+}): Promise<{ checkoutUrl: string }> {
   const response = await fetch("/api/marketplace/checkout", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -413,20 +440,16 @@ export async function checkoutMarketplaceListing(input: {
   });
 
   const result = (await response.json()) as {
-    order?: MarketplaceOrder;
-    emailNotifications?: MarketplaceOrderEmailNotifications;
+    checkoutUrl?: string;
     error?: { message?: string };
   };
   if (!response.ok) {
     throw new Error(result.error?.message ?? "Could not complete checkout.");
   }
-  if (!result.order || !result.emailNotifications) {
-    throw new Error("Checkout returned an incomplete response.");
+  if (!result.checkoutUrl) {
+    throw new Error("Checkout did not return a Stripe URL.");
   }
-  return {
-    order: result.order,
-    emailNotifications: result.emailNotifications,
-  };
+  return { checkoutUrl: result.checkoutUrl };
 }
 
 export async function getMarketplaceOrderRecords(

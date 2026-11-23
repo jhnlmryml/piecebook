@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Image from "next/image";
 import Link from "next/link";
 import { ArrowLeft, Heart, ImageOff, MessageCircle } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -20,6 +19,7 @@ import {
 import { Scroller } from "@/components/ui/scroller";
 import { LocalDateTime } from "@/components/shared/LocalDateTime";
 import { MarketplaceOrderSkeleton } from "@/components/shared/LoadingSkeletons";
+import { SupabaseImageWithFallback } from "@/components/shared/SupabaseImageWithFallback";
 import { MarketplaceOrderParty } from "./MarketplaceOrderParty";
 import { useProfile } from "@/context/ProfileContext";
 import { getInitials } from "@/lib/get-initials";
@@ -40,8 +40,9 @@ export default function MarketplaceOrderPage({ orderId }: { orderId: string }) {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
+    if (!currentUser) return;
     let active = true;
-    void getMarketplaceOrderRecord(orderId)
+    void getMarketplaceOrderRecord(orderId, currentUser.id)
       .then((record) => {
         if (active) setOrder(record);
       })
@@ -57,7 +58,7 @@ export default function MarketplaceOrderPage({ orderId }: { orderId: string }) {
     return () => {
       active = false;
     };
-  }, [orderId]);
+  }, [currentUser, orderId]);
 
   const hasAccess = Boolean(
     order && currentUser && (order.buyer_id === currentUser.id || order.seller_id === currentUser.id),
@@ -65,6 +66,18 @@ export default function MarketplaceOrderPage({ orderId }: { orderId: string }) {
   const categoryDetails = order
     ? Object.entries(parseCategoryDetails(order.listing_category_details))
     : [];
+
+  if (!isProfileLoading && !currentUser) {
+    return (
+      <main className="scrollbar-hide h-full min-h-0 overflow-y-auto px-4 py-8 sm:px-6">
+        <Card className="mx-auto max-w-3xl rounded-2xl border bg-card p-6 text-center shadow-sm sm:p-8">
+          <h1 className="text-xl font-bold">Choose a profile</h1>
+          <p className="mt-2 text-sm text-muted-foreground">Choose the buyer or seller profile for this order record.</p>
+          <Button nativeButton={false} render={<Link href="/marketplace" />} className="mt-5 rounded-xl"><ArrowLeft className="size-4" />Back</Button>
+        </Card>
+      </main>
+    );
+  }
 
   if (isLoading || isProfileLoading) {
     return (
@@ -100,14 +113,6 @@ export default function MarketplaceOrderPage({ orderId }: { orderId: string }) {
           <Button nativeButton={false} render={<Link href="/marketplace" />} variant="ghost" className="rounded-full px-3">
             <ArrowLeft className="size-4" />Back 
           </Button>
-          <Button
-            nativeButton={false}
-            render={<Link href={`/marketplace/items/${order.id}`} />}
-            variant="outline"
-            className="rounded-xl"
-          >
-            View item
-          </Button>
         </div>
         <Card className="overflow-hidden rounded-2xl border border-border/70 bg-card p-0 shadow-sm">
           {photos.length > 0 ? (
@@ -121,7 +126,7 @@ export default function MarketplaceOrderPage({ orderId }: { orderId: string }) {
                       : ""
                   }`}
                 >
-                  <Image src={photo} alt={`${order.listing_title} photo ${index + 1}`} fill unoptimized className="object-contain" />
+                  <SupabaseImageWithFallback src={photo} alt={`${order.listing_title} photo ${index + 1}`} fill sizes="(max-width: 640px) 100vw, 50vw" className="object-contain" />
                 </div>
               ))}
             </div>
@@ -291,13 +296,12 @@ export function OrderEngagementHistory({ sourceListingId }: { sourceListingId: s
                             <p className="whitespace-pre-wrap wrap-break-word">{comment.body}</p>
                           )}
                           {comment.image?.map((imageUrl, imageIndex) => (
-                            <Image
+                            <SupabaseImageWithFallback
                               key={`${comment.id}-${imageUrl}`}
                               src={imageUrl}
                               alt={`Image ${imageIndex + 1} attached to listing comment`}
                               width={560}
                               height={420}
-                              unoptimized
                               className="mt-2 max-h-72 w-auto max-w-full rounded-sm object-contain"
                             />
                           ))}

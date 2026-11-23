@@ -140,6 +140,9 @@ export function MessagingCenter() {
   const [editDraft, setEditDraft] = useState("");
   const [deleteTarget, setDeleteTarget] = useState<MessageDeleteTarget | null>(null);
   const [deleteConversationTarget, setDeleteConversationTarget] = useState<string | null>(null);
+  const [isDeletingMessage, setIsDeletingMessage] = useState(false);
+  const [isDeletingConversation, setIsDeletingConversation] = useState(false);
+  const [reactingMessageIds, setReactingMessageIds] = useState<Set<string>>(new Set());
   const [listingConversationsListing, setListingConversationsListing] =
     useState<MarketplaceMessageListing | null>(null);
   const [listingConversationPreviews, setListingConversationPreviews] = useState<
@@ -304,6 +307,7 @@ export function MessagingCenter() {
   }, [marketplaceListings, messages]);
 
   useEffect(() => {
+    if (!currentUser) return;
     const orderIds = new Set(
       messages.flatMap((message) =>
         message.marketplace_order_id ? [message.marketplace_order_id] : [],
@@ -318,7 +322,7 @@ export function MessagingCenter() {
       }
 
       requestedMarketplaceOrdersRef.current.add(orderId);
-      void getMarketplaceOrderRecord(orderId)
+      void getMarketplaceOrderRecord(orderId, currentUser.id)
         .then((order) => {
           setMarketplaceOrders((current) => ({ ...current, [orderId]: order }));
         })
@@ -331,7 +335,7 @@ export function MessagingCenter() {
           );
         });
     }
-  }, [marketplaceOrders, messages]);
+  }, [currentUser, marketplaceOrders, messages]);
 
   useEffect(() => {
     if (!listingConversationsListing || !currentUser) return;
@@ -667,7 +671,7 @@ export function MessagingCenter() {
     setIsSending(true);
     setError(null);
     try {
-      await sendMessage({
+      const sentMessage = await sendMessage({
         senderId: currentUser.id,
         recipientId: activeProfile.id,
         body: validation.data.body,
@@ -678,7 +682,10 @@ export function MessagingCenter() {
       setMarketplaceContextRecipientId(null);
       setDraft("");
       setFiles([]);
-      setMessages(await getMessages(currentUser.id));
+      setMessages((current) => [
+        ...current.filter((message) => message.id !== sentMessage.id),
+        toMessageWithReactions(sentMessage),
+      ]);
     } catch (sendError) {
       setError(sendError instanceof Error ? sendError.message : "Could not send message.");
     } finally {
@@ -687,24 +694,68 @@ export function MessagingCenter() {
   }
 
   async function handleReaction(messageId: string, reaction: string) {
-    if (!currentUser) return;
+    if (!currentUser || reactingMessageIds.has(messageId)) return;
+    const message = messages.find((item) => item.id === messageId);
+    if (!message) return;
+    const existingReaction = message.reactions.find(
+      (item) => item.user_id === currentUser.id,
+    );
+    const nextReaction = existingReaction?.reaction === reaction ? null : reaction;
+    setReactingMessageIds((current) => new Set(current).add(messageId));
+    setMessages((current) =>
+      current.map((item) => {
+        if (item.id !== messageId) return item;
+        const reactions = item.reactions.filter(
+          (itemReaction) => itemReaction.user_id !== currentUser.id,
+        );
+        return {
+          ...item,
+          reactions: nextReaction
+            ? [
+                ...reactions,
+                {
+                  id: `optimistic-${messageId}-${currentUser.id}`,
+                  message_id: messageId,
+                  user_id: currentUser.id,
+                  reaction: nextReaction,
+                  created_at: new Date().toISOString(),
+                },
+              ]
+            : reactions,
+        };
+      }),
+    );
     try {
-      const currentReaction =
-        messages
-          .find((message) => message.id === messageId)
-          ?.reactions.find((item) => item.user_id === currentUser.id)?.reaction ??
-        null;
       await toggleMarketplaceMessageReaction({
         messageId,
         profileId: currentUser.id,
         reaction,
-        currentReaction,
+        currentReaction: existingReaction?.reaction ?? null,
       });
-      setMessages(await getMessages(currentUser.id));
     } catch (reactionError) {
+      setMessages((current) =>
+        current.map((item) => {
+          if (item.id !== messageId) return item;
+          const withoutCurrentUser = item.reactions.filter(
+            (itemReaction) => itemReaction.user_id !== currentUser.id,
+          );
+          return {
+            ...item,
+            reactions: existingReaction
+              ? [...withoutCurrentUser, existingReaction]
+              : withoutCurrentUser,
+          };
+        }),
+      );
       toast.error(
         reactionError instanceof Error ? reactionError.message : "Could not update reaction.",
       );
+    } finally {
+      setReactingMessageIds((current) => {
+        const next = new Set(current);
+        next.delete(messageId);
+        return next;
+      });
     }
   }
 
@@ -729,9 +780,15 @@ export function MessagingCenter() {
     setIsSending(true);
     setError(null);
     try {
-      await editMessage(messageId, currentUser.id, editDraft);
+      const updatedMessage = await editMessage(messageId, currentUser.id, editDraft);
       cancelMessageEdit();
-      setMessages(await getMessages(currentUser.id));
+      setMessages((current) =>
+        current.map((message) =>
+          message.id === messageId
+            ? toMessageWithReactions(updatedMessage, message.reactions)
+            : message,
+        ),
+      );
     } catch (editError) {
       toast.error(editError instanceof Error ? editError.message : "Could not edit message.");
     } finally {
@@ -749,7 +806,8 @@ export function MessagingCenter() {
   }
 
   async function handleDelete() {
-    if (!currentUser || !deleteTarget) return;
+    if (!currentUser || !deleteTarget || isDeletingMessage) return;
+    setIsDeletingMessage(true);
     try {
       let cleanupWarning: string | null = null;
       if (deleteTarget.mode === "everyone") {
@@ -770,6 +828,8 @@ export function MessagingCenter() {
       toast.error(
         deleteError instanceof Error ? deleteError.message : "Could not delete message.",
       );
+    } finally {
+      setIsDeletingMessage(false);
     }
   }
 
@@ -793,8 +853,9 @@ export function MessagingCenter() {
   }
 
   async function handleDeleteConversation() {
-    if (!currentUser || !deleteConversationTarget) return;
+    if (!currentUser || !deleteConversationTarget || isDeletingConversation) return;
     const profileId = deleteConversationTarget;
+    setIsDeletingConversation(true);
     try {
       const preference = await deleteConversationForMe(currentUser.id, profileId);
       const conversation = conversations.find(
@@ -824,6 +885,8 @@ export function MessagingCenter() {
       toast.error(
         deleteError instanceof Error ? deleteError.message : "Could not delete conversation.",
       );
+    } finally {
+      setIsDeletingConversation(false);
     }
   }
 
@@ -864,7 +927,7 @@ export function MessagingCenter() {
       <Sheet open={open} onOpenChange={handleSheetOpenChange}>
         <SheetContent
           side="right"
-          className="w-full bg-background p-0 text-foreground shadow-2xl data-[side=right]:w-full data-[side=right]:sm:max-w-2xl"
+          className="w-full select-none bg-background p-0 text-foreground shadow-2xl data-[side=right]:w-full data-[side=right]:sm:max-w-2xl"
           showCloseButton
         >
           <SheetHeader className="shrink-0 flex-row items-center gap-3 border-b border-border/70 bg-card/95 px-4 py-4 pr-14 sm:px-6 sm:py-5">
@@ -947,6 +1010,7 @@ export function MessagingCenter() {
                     marketplaceListings={marketplaceListings}
                     marketplaceOrders={marketplaceOrders}
                     exitingMessageIds={exitingMessageIds}
+                    reactingMessageIds={reactingMessageIds}
                     onViewListing={() => handleSheetOpenChange(false)}
                     onReact={handleReaction}
                     onCopy={handleCopyMessage}
@@ -1010,8 +1074,10 @@ export function MessagingCenter() {
         deleteConversationTarget={deleteConversationTarget}
         onCloseMessageDialog={() => setDeleteTarget(null)}
         onDeleteMessage={handleDelete}
+        isDeletingMessage={isDeletingMessage}
         onCloseConversationDialog={() => setDeleteConversationTarget(null)}
         onDeleteConversation={handleDeleteConversation}
+        isDeletingConversation={isDeletingConversation}
       />
     </>
   );

@@ -10,6 +10,7 @@ import {
   type MarketplaceOrder,
 } from "@/components/features/marketplace/marketplace-data";
 import type { MarketplaceMessageListing } from "@/lib/messaging-events";
+import { isSupabasePublicImage } from "@/lib/is-supabase-public-image";
 
 export function MarketplaceListingContextCard({
   listing,
@@ -27,7 +28,7 @@ export function MarketplaceListingContextCard({
             alt=""
             fill
             sizes="56px"
-            unoptimized
+            unoptimized={!isSupabasePublicImage(listing.image)}
             className="object-cover"
           />
         </div>
@@ -74,7 +75,7 @@ export function MarketplaceMessageAttachmentCard({
       ? order === undefined
       : listingId !== null && listing === undefined;
   const href = orderId || order
-    ? `/marketplace/items/${orderId ?? order?.id}`
+    ? `/marketplace/orders/${orderId ?? order?.id}`
     : listingId && listing !== null
       ? `/marketplace/${listingId}`
       : null;
@@ -87,7 +88,7 @@ export function MarketplaceMessageAttachmentCard({
         alt=""
         fill
         sizes="56px"
-        unoptimized
+        unoptimized={!isSupabasePublicImage(image)}
         className="object-cover"
       />
     </div>
