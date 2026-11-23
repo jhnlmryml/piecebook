@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Download, LoaderCircle, Paperclip } from "lucide-react";
 import Image from "next/image";
+import { isSupabasePublicImage } from "@/lib/is-supabase-public-image";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -94,7 +95,7 @@ export function MessageAttachments({
                   alt={attachment.name}
                   width={480}
                   height={360}
-                  unoptimized
+                  unoptimized={!isSupabasePublicImage(url)}
                   className="h-auto max-h-80 max-w-full rounded-2xl object-contain"
                 />
               </a>

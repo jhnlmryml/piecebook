@@ -67,7 +67,7 @@ const categoryIcons: Record<Category, LucideIcon> = {
 };
 
 const viewItems: { label: string; view: MarketplaceView; icon: LucideIcon }[] = [
-  { label: "Manage your listings", view: "selling", icon: ClipboardList },
+  { label: "Seller Dashboard", view: "selling", icon: ClipboardList },
   { label: "Saved items", view: "saved", icon: Bookmark },
   { label: "Purchase history", view: "purchases", icon: ShoppingBag },
   { label: "Sales history", view: "sales", icon: CircleDollarSign },
@@ -151,8 +151,8 @@ export function MarketplaceNavigation() {
                   <Icon className="size-4" />
                   <span className="group-data-[collapsible=icon]:hidden">{label}</span>
                 </SidebarMenuButton>
-                {(view === "saved" || view === "selling") && (
-                  <SidebarMenuBadge>{formatCount(view === "saved" ? savedListingIds.length : sellingCount)}</SidebarMenuBadge>
+                {view === "saved" && (
+                  <SidebarMenuBadge>{formatCount(savedListingIds.length)}</SidebarMenuBadge>
                 )}
               </SidebarMenuItem>
             ))}

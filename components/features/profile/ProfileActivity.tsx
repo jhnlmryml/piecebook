@@ -28,6 +28,7 @@ import {
 } from "@/components/ui/tabs";
 import { LocalDateTime } from "@/components/shared/LocalDateTime";
 import { getInitials } from "@/lib/get-initials";
+import { isSupabasePublicImage } from "@/lib/is-supabase-public-image";
 import { getProfileActivity, type ProfileActivity as ProfileActivityData } from "@/lib/profile-activity";
 import {
   formatPrice,
@@ -35,8 +36,6 @@ import {
   type Listing,
 } from "@/components/features/marketplace/marketplace-data";
 import type { UserProfile } from "@/types/user-profile";
-
-const imageLoader = ({ src }: { src: string }) => src;
 
 type ActivityRequestState =
   | {
@@ -178,12 +177,11 @@ function CommentActivity({
               {comment.image?.map((imageUrl, index) => (
                 <Image
                   key={`${comment.id}-${index}`}
-                  loader={imageLoader}
                   src={imageUrl}
                   alt={`Photo ${index + 1} in ${profile.full_name}'s comment`}
                   width={560}
                   height={420}
-                  unoptimized
+                  unoptimized={!isSupabasePublicImage(imageUrl)}
                   className="mt-3 max-h-80 w-auto max-w-full rounded-xl object-contain"
                 />
               ))}
@@ -206,12 +204,11 @@ function ListingActivityCard({ listing }: { listing: Listing }) {
         <div className="relative aspect-4/3 overflow-hidden bg-muted">
           {listing.image ? (
             <Image
-              loader={imageLoader}
               src={listing.image}
               alt={listing.title}
               fill
               sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
-              unoptimized
+              unoptimized={!isSupabasePublicImage(listing.image)}
               className="object-cover transition-transform duration-300 group-hover:scale-[1.03]"
             />
           ) : (

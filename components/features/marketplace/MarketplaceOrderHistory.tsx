@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { PackageSearch } from "lucide-react";
-import Image from "next/image";
 import Link from "next/link";
+import { SupabaseImageWithFallback } from "@/components/shared/SupabaseImageWithFallback";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { MarketplaceOrderParty } from "./MarketplaceOrderParty";
@@ -99,7 +99,7 @@ export function MarketplaceOrderHistory({
                   <div className="min-w-0">
                     <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-primary">Order placed</p>
                     <h2 className="mt-1 wrap-break-word text-base font-bold">
-                      <Link href={`/marketplace/items/${record.id}`} className="underline-offset-4 transition-colors hover:text-primary hover:underline">
+                      <Link href={`/marketplace/orders/${record.id}`} className="underline-offset-4 transition-colors hover:text-primary hover:underline">
                         {record.listing_title}
                       </Link>
                     </h2>
@@ -130,11 +130,11 @@ export function MarketplaceOrderHistory({
                 <div className="mt-4 flex gap-3 border-t border-border pt-4">
                   {record.listing_photos[0] && (
                     <Link
-                      href={`/marketplace/items/${record.id}`}
-                      aria-label={`View sold item: ${record.listing_title}`}
+                      href={`/marketplace/orders/${record.id}`}
+                      aria-label={`View order item: ${record.listing_title}`}
                       className="relative size-20 shrink-0 overflow-hidden rounded-xl bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     >
-                      <Image src={record.listing_photos[0]} alt="" fill unoptimized className="object-cover" />
+                      <SupabaseImageWithFallback src={record.listing_photos[0]} alt="" fill sizes="80px" className="object-cover" />
                     </Link>
                   )}
                   <div className="min-w-0 flex-1">
@@ -148,7 +148,12 @@ export function MarketplaceOrderHistory({
                       {record.listing_description}
                     </p>
                   </div>
-                  <p className="shrink-0 text-sm font-bold">Total {formatPrice(Number(record.total_price))}</p>
+                  <div className="shrink-0 text-right">
+                    <p className="text-sm font-bold">Total {formatPrice(Number(record.total_price))}</p>
+                    <span className={`mt-1 inline-flex rounded-full px-2.5 py-1 text-[10px] font-semibold capitalize ${record.payment_status === "paid" || record.payment_status === "legacy" ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300" : record.payment_status === "pending" ? "bg-amber-500/10 text-amber-700 dark:text-amber-300" : "bg-muted text-muted-foreground"}`}>
+                      {record.payment_status === "legacy" ? "Historical sale" : record.payment_status.replaceAll("_", " ")}
+                    </span>
+                  </div>
                 </div>
                 <div className="mt-3 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
                   {Object.entries(parseCategoryDetails(record.listing_category_details)).map(([label, value]) => (

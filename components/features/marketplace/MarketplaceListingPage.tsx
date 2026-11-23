@@ -1,7 +1,6 @@
 "use client";
 
-import { useState, useSyncExternalStore } from "react";
-import Image from "next/image";
+import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -32,6 +31,7 @@ import { Label } from "@/components/ui/label";
 import { useProfile } from "@/context/ProfileContext";
 import { getInitials } from "@/lib/get-initials";
 import { isValidMarketplaceEmail } from "@/lib/marketplace-email";
+import { SupabaseImageWithFallback } from "@/components/shared/SupabaseImageWithFallback";
 import { requestMarketplaceMessaging } from "@/lib/messaging-events";
 import { useMarketplaceLayout } from "./MarketplaceLayoutContext";
 import { ListingDetailsView } from "./ListingDetailsView";
@@ -54,6 +54,46 @@ import {
 type MarketplaceListingPageProps = {
   listingId: string;
 };
+
+type SellerPaymentStatus = "loading" | "not_connected" | "incomplete" | "pending" | "connected" | "unavailable";
+
+type SellerPaymentStatusResponse = {
+  status?: Exclude<SellerPaymentStatus, "loading">;
+  error?: { message?: string };
+};
+
+const sellerPaymentStatusCache = new Map<
+  string,
+  { expiresAt: number; promise: Promise<Exclude<SellerPaymentStatus, "loading">> }
+>();
+const sellerPaymentStatusCacheDuration = 15_000;
+
+function getSellerPaymentStatus(listingId: string, sellerId: string) {
+  const cacheKey = `${listingId}:${sellerId}`;
+  const cached = sellerPaymentStatusCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) return cached.promise;
+
+  const query = new URLSearchParams({ listingId, profileId: sellerId });
+  const promise = fetch(`/api/stripe/connect?${query.toString()}`, { cache: "no-store" })
+    .then(async (response) => {
+      const result = (await response.json()) as SellerPaymentStatusResponse;
+      if (!response.ok || !result.status) {
+        throw new Error(result.error?.message ?? "Could not verify seller payout setup.");
+      }
+      return result.status;
+    })
+    .catch((error: unknown) => {
+      const current = sellerPaymentStatusCache.get(cacheKey);
+      if (current?.promise === promise) sellerPaymentStatusCache.delete(cacheKey);
+      throw error;
+    });
+
+  sellerPaymentStatusCache.set(cacheKey, {
+    expiresAt: Date.now() + sellerPaymentStatusCacheDuration,
+    promise,
+  });
+  return promise;
+}
 
 function CheckoutPartyCard({
   label,
@@ -107,11 +147,71 @@ export default function MarketplaceListingPage({
   const { savedListingIds, toggleSavedListing } = useMarketplaceLayout();
   const { currentUser, allUsers, isLoading: isUserLoading } = useProfile();
   const router = useRouter();
+  const saveListing = useCallback(
+    (savedListingId: string) => toggleSavedListing(savedListingId),
+    [toggleSavedListing],
+  );
+  const listing = snapshot.status === "ready" ? snapshot.listing : null;
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
   const [checkoutQuantity, setCheckoutQuantity] = useState("1");
   const [buyerEmail, setBuyerEmail] = useState("");
   const [checkoutStep, setCheckoutStep] = useState<"review" | "confirm">("review");
   const [isPurchasing, setIsPurchasing] = useState(false);
+  const [sellerPaymentState, setSellerPaymentState] = useState<{
+    key: string;
+    attempt: number;
+    status: SellerPaymentStatus;
+    error: string | null;
+  }>({ key: "", attempt: -1, status: "unavailable", error: null });
+  const [sellerStatusRetryCount, setSellerStatusRetryCount] = useState(0);
+  const sellerId = listing?.sellerId ?? null;
+  const sellerStatusKey = sellerId ? `${listingId}:${sellerId}` : "";
+  const shouldCheckSellerStatus = Boolean(
+    snapshot.status === "ready" &&
+    listing &&
+    listing.status === "available" &&
+    listing.quantity > 0 &&
+    listing.price > 0 &&
+    sellerId &&
+    sellerId !== currentUser?.id,
+  );
+
+  useEffect(() => {
+    if (!shouldCheckSellerStatus || !sellerId) return;
+    let active = true;
+    void getSellerPaymentStatus(listingId, sellerId)
+      .then((status) => {
+        if (active) {
+          setSellerPaymentState({
+            key: sellerStatusKey,
+            attempt: sellerStatusRetryCount,
+            status,
+            error: null,
+          });
+        }
+      })
+      .catch((statusError: unknown) => {
+        if (active) {
+          setSellerPaymentState({
+            key: sellerStatusKey,
+            attempt: sellerStatusRetryCount,
+            status: "unavailable",
+            error: statusError instanceof Error ? statusError.message : "Could not verify seller payout setup.",
+          });
+        }
+      });
+    return () => { active = false; };
+  }, [listingId, sellerId, sellerStatusKey, sellerStatusRetryCount, shouldCheckSellerStatus]);
+  const sellerPaymentStatus = !sellerId
+    ? "unavailable"
+    : sellerPaymentState.key === sellerStatusKey && sellerPaymentState.attempt === sellerStatusRetryCount
+        ? sellerPaymentState.status
+        : "loading";
+  const retrySellerStatus = () => {
+    if (!sellerStatusKey) return;
+    sellerPaymentStatusCache.delete(sellerStatusKey);
+    setSellerStatusRetryCount((count) => count + 1);
+  };
 
   if (snapshot.status === "loading") {
     return (
@@ -136,7 +236,6 @@ export default function MarketplaceListingPage({
     );
   }
 
-  const listing = snapshot.listing;
   if (!listing) {
     return (
       <main className="scrollbar-hide h-full min-h-0 overflow-y-auto px-4 py-8 sm:px-6">
@@ -153,7 +252,29 @@ export default function MarketplaceListingPage({
   const isOwnListing = isOwnMarketplaceListing(listing, currentUser?.id);
   const canUseSellerActions = !isUserLoading && Boolean(currentUser) && !isOwnListing && listing.status === "available";
   const canMessageSeller = canUseSellerActions && Boolean(currentUser && listing.sellerId);
-  const canCheckout = canUseSellerActions && listing.quantity > 0 && Boolean(listing.sellerId);
+  const canCheckout = canUseSellerActions && listing.quantity > 0 && listing.price > 0 && Boolean(listing.sellerId) && sellerPaymentStatus === "connected";
+  const checkoutDisabled = canUseSellerActions && listing.status === "available" && listing.quantity > 0 && listing.price > 0 && Boolean(listing.sellerId) && sellerPaymentStatus === "loading";
+  const checkoutNotice = !isOwnListing && listing.status === "available" && listing.quantity > 0 && listing.price > 0 && !canCheckout
+    ? sellerPaymentStatus === "loading"
+      ? undefined
+      : sellerPaymentStatus === "unavailable"
+        ? !sellerId
+          ? "The seller’s Stripe account could not be identified."
+          : (
+          <>
+            Online checkout is temporarily unavailable.{" "}
+            <button
+              type="button"
+              onClick={retrySellerStatus}
+              title={sellerPaymentState.error ?? undefined}
+              className="font-semibold text-primary underline underline-offset-2 hover:text-primary/80"
+            >
+              Try again
+            </button>
+          </>
+          )
+        : "Online checkout will be available after the seller finishes Stripe payout setup."
+    : undefined;
   const canViewMessages = !isUserLoading && Boolean(currentUser) && isOwnListing;
   const sellerProfile = allUsers.find((profile) => profile.id === listing.sellerId);
   const selectedQuantity = Number(checkoutQuantity);
@@ -207,31 +328,13 @@ export default function MarketplaceListingPage({
 
     setIsPurchasing(true);
     try {
-      const { emailNotifications } = await checkoutMarketplaceListing({
+      const { checkoutUrl } = await checkoutMarketplaceListing({
         listingId: validation.data.listingId,
         buyerId: validation.data.buyerId,
         quantity: validation.data.quantity,
         buyerEmail: validation.data.buyerEmail,
       });
-      setIsCheckoutOpen(false);
-      setCheckoutStep("review");
-      const sentTo = [
-        emailNotifications.buyerSent ? "buyer" : null,
-        emailNotifications.sellerSent ? "seller" : null,
-      ].filter((recipient): recipient is string => recipient !== null);
-      if (emailNotifications.errors.length === 0 && sentTo.length === 0) {
-        toast.success("Order placed. No email notifications were sent.");
-      } else if (emailNotifications.errors.length === 0) {
-        toast.success(
-          `Order placed. Email sent to the ${sentTo.join(" and ")}.`,
-        );
-      } else {
-        toast.warning(
-          `Order placed, but some email notifications were not delivered. ${emailNotifications.errors.join(" ")}`,
-        );
-      }
-      await refreshMarketplaceListings();
-      router.replace("/marketplace");
+      window.location.assign(checkoutUrl);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not complete checkout.");
     } finally {
@@ -284,6 +387,8 @@ export default function MarketplaceListingPage({
               setCheckoutStep("review");
               setIsCheckoutOpen(true);
             } : undefined}
+            checkoutDisabled={checkoutDisabled}
+            checkoutNotice={checkoutNotice}
             layoutClassName="grid min-h-0 grid-cols-1 md:h-[min(64dvh,42rem)] md:grid-cols-[minmax(0,1.1fr)_minmax(20rem,0.9fr)]"
             imageClassName="min-h-[min(38dvh,22rem)] md:min-h-0"
           />
@@ -322,7 +427,8 @@ export default function MarketplaceListingPage({
                   key={recommendedListing.id}
                   listing={recommendedListing}
                   isSaved={savedListingIds.includes(recommendedListing.id)}
-                  onSave={() => toggleSavedListing(recommendedListing.id)}
+                  canSaveListing={!isUserLoading && Boolean(currentUser) && recommendedListing.status === "available" && !isOwnMarketplaceListing(recommendedListing, currentUser?.id)}
+                  onSaveListing={saveListing}
                 />
               ))}
             </div>
@@ -354,9 +460,7 @@ export default function MarketplaceListingPage({
             <DrawerDescription className="mt-1 text-sm leading-relaxed">
               {checkoutStep === "review"
                 ? "Check the item, quantity, and contact details before continuing."
-                : normalizedBuyerEmail
-                  ? "Confirm the order details and total. The buyer and seller receive emails only if their addresses were provided."
-                  : "Confirm the order details and total. The seller receives an email only if they provided one when creating the listing."}
+                : "Stripe securely collects payment details. The marketplace confirms the order after Stripe verifies payment."}
             </DrawerDescription>
             <div aria-hidden="true" className="mt-3 flex gap-1.5">
               <span className="h-1 flex-1 rounded-full bg-primary" />
@@ -374,11 +478,11 @@ export default function MarketplaceListingPage({
                   <div className="flex gap-3 p-3.5">
                     <div className="relative size-20 shrink-0 overflow-hidden rounded-xl bg-muted">
                       {listing.photos[0] ? (
-                        <Image
+                        <SupabaseImageWithFallback
                           src={listing.photos[0]}
                           alt={`${listing.title} photo`}
                           fill
-                          unoptimized
+                          sizes="80px"
                           className="object-cover"
                         />
                       ) : (
@@ -471,14 +575,14 @@ export default function MarketplaceListingPage({
                     <div>
                       <h2 className="text-sm font-semibold tracking-tight">Contact & quantity</h2>
                       <p className="text-xs text-muted-foreground">
-                        Email is optional. Choose how many items you want.
+                        Stripe Checkout collects payment details securely. Email can prefill Checkout.
                       </p>
                     </div>
                   </div>
                   <div className="mt-4 grid gap-3 min-[520px]:grid-cols-[minmax(0,1fr)_7rem]">
                     <div className="min-w-0 space-y-1.5">
                       <Label htmlFor="checkout-buyer-email" className="text-xs font-semibold">
-                        Buyer email (use to send an email)
+                        Buyer email (optional)
                       </Label>
                       <Input
                         id="checkout-buyer-email"
@@ -497,7 +601,7 @@ export default function MarketplaceListingPage({
                         </p>
                       ) : (
                         <p className="text-xs text-muted-foreground">
-                          Optional. Leave blank to skip the buyer email.
+                          Optional. Stripe will ask for an email during Checkout if you leave this blank.
                         </p>
                       )}
                     </div>
@@ -522,7 +626,7 @@ export default function MarketplaceListingPage({
                     </div>
                     <div className="flex items-center justify-between gap-3 rounded-xl border border-primary/15 bg-primary/5 px-3.5 py-3 min-[520px]:col-span-2">
                       <div>
-                        <p className="text-sm font-semibold">Order total</p>
+                        <p className="text-sm font-semibold">Payment total</p>
                         <p className="text-xs text-muted-foreground">
                           {formatPrice(listing.price)} ×{" "}
                           {Number.isSafeInteger(selectedQuantity) ? selectedQuantity : 0}
@@ -545,7 +649,7 @@ export default function MarketplaceListingPage({
                     <div className="min-w-0">
                       <h2 className="text-sm font-semibold tracking-tight">Order details</h2>
                       <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
-                        Check these details before placing your order.
+                        Review the details before opening secure Stripe Checkout.
                       </p>
                     </div>
                   </div>
@@ -579,9 +683,9 @@ export default function MarketplaceListingPage({
                       </dd>
                     </div>
                     <div className="min-w-0">
-                      <dt className="text-xs text-muted-foreground">Seller notification</dt>
+                      <dt className="text-xs text-muted-foreground">Payment</dt>
                       <dd className="mt-0.5 font-medium">
-                        Seller email from listing, if provided
+                        Stripe Checkout · 10% marketplace fee paid by the seller
                       </dd>
                     </div>
                     <div className="min-w-0">
@@ -592,9 +696,9 @@ export default function MarketplaceListingPage({
                 </Card>
                 <Card className="flex items-center justify-between gap-3 rounded-2xl border-primary/20 bg-primary/5 p-4 shadow-none">
                   <div>
-                    <p className="text-sm font-semibold">Amount to confirm</p>
+                    <p className="text-sm font-semibold">Amount due in Stripe Checkout</p>
                     <p className="mt-0.5 text-xs text-muted-foreground">
-                      {selectedQuantity} {selectedQuantity === 1 ? "item" : "items"} · No payment collected here
+                      {selectedQuantity} {selectedQuantity === 1 ? "item" : "items"} · Order saved after webhook confirmation
                     </p>
                   </div>
                   <p className="shrink-0 text-2xl font-bold tracking-tight text-primary">
@@ -604,9 +708,7 @@ export default function MarketplaceListingPage({
                 <div className="flex gap-2.5 rounded-xl border border-border/70 bg-card px-3.5 py-3 text-xs leading-relaxed text-muted-foreground">
                   <ShoppingBag aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-primary" />
                   <p>
-                    {normalizedBuyerEmail
-                      ? "Your buyer confirmation will be sent to the email above. The seller is notified only if they provided an email when creating the listing."
-                      : "No buyer email provided. The seller is notified only if they provided an email when creating the listing."}
+                    Stripe hosts the payment page. Piecebook records this order only after it receives a verified payment event.
                   </p>
                 </div>
               </>
@@ -659,7 +761,7 @@ export default function MarketplaceListingPage({
                   onClick={() => void completeCheckout()}
                 >
                   <Check aria-hidden="true" className="size-4" />
-                  {isPurchasing ? "Placing order…" : `Confirm order · ${formatPrice(checkoutTotal)}`}
+                  {isPurchasing ? "Opening Stripe Checkout…" : `Continue to Stripe · ${formatPrice(checkoutTotal)}`}
                 </Button>
               </>
             )}

@@ -216,6 +216,7 @@ export type Database = {
           source_listing_id: string | null
           total_price: number
           unit_price: number
+          payment_status: string
         }
         Insert: {
           buyer_id: string
@@ -245,6 +246,7 @@ export type Database = {
           source_listing_id?: string | null
           total_price: number
           unit_price: number
+          payment_status?: string
         }
         Update: {
           buyer_id?: string
@@ -274,6 +276,7 @@ export type Database = {
           source_listing_id?: string | null
           total_price?: number
           unit_price?: number
+          payment_status?: string
         }
         Relationships: [
           {
@@ -298,6 +301,136 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      marketplace_order_payments: {
+        Row: {
+          marketplace_order_id: string
+          listing_id: string
+          buyer_email: string | null
+          seller_email: string
+          stripe_account_id: string
+          stripe_checkout_session_id: string | null
+          stripe_payment_intent_id: string | null
+          item_price: number
+          platform_fee_amount: number
+          seller_net_amount: number
+          currency: string
+          payment_status: string
+          checkout_cancel_token_hash: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          marketplace_order_id: string
+          listing_id: string
+          buyer_email?: string | null
+          seller_email: string
+          stripe_account_id: string
+          stripe_checkout_session_id?: string | null
+          stripe_payment_intent_id?: string | null
+          item_price: number
+          platform_fee_amount: number
+          seller_net_amount: number
+          currency?: string
+          payment_status?: string
+          checkout_cancel_token_hash?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          marketplace_order_id?: string
+          listing_id?: string
+          buyer_email?: string | null
+          seller_email?: string
+          stripe_account_id?: string
+          stripe_checkout_session_id?: string | null
+          stripe_payment_intent_id?: string | null
+          item_price?: number
+          platform_fee_amount?: number
+          seller_net_amount?: number
+          currency?: string
+          payment_status?: string
+          checkout_cancel_token_hash?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "marketplace_order_payments_marketplace_order_id_fkey"
+            columns: ["marketplace_order_id"]
+            isOneToOne: true
+            referencedRelation: "marketplace_orders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      marketplace_seller_stripe_accounts: {
+        Row: {
+          seller_email: string
+          seller_id: string
+          stripe_account_id: string
+          onboarding_status: string
+          details_submitted: boolean
+          charges_enabled: boolean
+          payouts_enabled: boolean
+          capabilities: Json
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          seller_email: string
+          seller_id: string
+          stripe_account_id: string
+          onboarding_status?: string
+          details_submitted?: boolean
+          charges_enabled?: boolean
+          payouts_enabled?: boolean
+          capabilities?: Json
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          seller_email?: string
+          seller_id?: string
+          stripe_account_id?: string
+          onboarding_status?: string
+          details_submitted?: boolean
+          charges_enabled?: boolean
+          payouts_enabled?: boolean
+          capabilities?: Json
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "marketplace_seller_stripe_accounts_seller_id_fkey"
+            columns: ["seller_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      stripe_webhook_events: {
+        Row: {
+          stripe_event_id: string
+          event_type: string
+          account_id: string | null
+          processed_at: string
+        }
+        Insert: {
+          stripe_event_id: string
+          event_type: string
+          account_id?: string | null
+          processed_at?: string
+        }
+        Update: {
+          stripe_event_id?: string
+          event_type?: string
+          account_id?: string | null
+          processed_at?: string
+        }
+        Relationships: []
       }
       marketplace_listing_like_archive: {
         Row: {
@@ -694,6 +827,44 @@ export type Database = {
           requested_quantity: number
         }
         Returns: Database["public"]["Tables"]["marketplace_orders"]["Row"]
+      }
+      create_marketplace_payment_order: {
+        Args: {
+          requested_buyer_id: string
+          requested_listing_id: string
+          requested_quantity: number
+          requested_stripe_account_id: string
+          requested_cancel_token_hash: string
+        }
+        Returns: Database["public"]["Tables"]["marketplace_orders"]["Row"]
+      }
+      complete_marketplace_stripe_order: {
+        Args: {
+          requested_event_id: string
+          requested_event_type: string
+          requested_order_id: string
+          requested_session_id: string
+          requested_account_id: string
+          requested_payment_intent_id: string | null
+          requested_buyer_email: string | null
+        }
+        Returns: boolean
+      }
+      expire_marketplace_stripe_order: {
+        Args: {
+          requested_event_id: string
+          requested_event_type: string
+          requested_order_id: string
+          requested_session_id: string
+          requested_account_id: string
+        }
+        Returns: boolean
+      }
+      abandon_marketplace_stripe_order: {
+        Args: {
+          requested_order_id: string
+        }
+        Returns: boolean
       }
     }
     Enums: {

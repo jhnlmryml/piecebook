@@ -17,10 +17,15 @@ import {
   requireUuid,
 } from "@/lib/server/api-utils";
 import { marketplaceListingPublicColumns } from "@/lib/marketplace-validation";
+import type { Tables } from "@/types/supabase";
 import { z } from "zod";
 
 type Method = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 const uuidSchema = z.string().uuid();
+type WallPostFeedRow = Tables<"posts"> & {
+  comment_count?: Array<{ count: number }>;
+  feed_comments?: Tables<"post_comments">[];
+};
 const postLikeSchema = z.object({ profileId: uuidSchema });
 const postCommentSchema = commentPayloadSchema.extend({
   user_id: uuidSchema,
@@ -225,11 +230,32 @@ async function handlePosts(
     const supabase = getSupabaseClient();
     const { data, error } = await supabase
       .from("posts")
-      .select("*")
+      .select(`
+        id,
+        user_id,
+        post,
+        image,
+        likes_by,
+        created_at,
+        comment_count:post_comments(count),
+        feed_comments:post_comments(id,post_id,user_id,body,image,created_at)
+      `)
       .order("created_at", { ascending: false })
-      .limit(50);
+      .limit(50)
+      .order("created_at", { ascending: false, referencedTable: "feed_comments" })
+      .order("id", { ascending: false, referencedTable: "feed_comments" })
+      .limit(20, { referencedTable: "feed_comments" });
     if (error) databaseError("Could not load posts", error);
-    return json(data);
+    const feedRows = data as unknown as Array<WallPostFeedRow>;
+    const posts = feedRows.map(({ comment_count, feed_comments, ...post }) => {
+      const comments = (feed_comments ?? []).reverse();
+      return {
+        ...post,
+        comments,
+        commentCount: comment_count?.[0]?.count ?? 0,
+      };
+    });
+    return json(posts);
   }
 
   if (path.length === 1 && path[0] === "posts" && method === "POST") {

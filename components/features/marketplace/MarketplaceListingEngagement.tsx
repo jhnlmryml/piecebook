@@ -39,7 +39,6 @@ import {
 import {
   createMarketplaceListingComment,
   deleteMarketplaceListingComment,
-  canEngageWithMarketplaceListing,
   getMarketplaceListingCommentsBefore,
   getMarketplaceListingEngagement,
   MARKETPLACE_LISTING_COMMENT_PAGE_SIZE,
@@ -296,19 +295,13 @@ export function MarketplaceListingEngagement({
     if (!currentUser || isLiking || !canEngage) return;
     setIsLiking(true);
     try {
-      const canEngage = await canEngageWithMarketplaceListing(listingId);
-      setServerAllowsEngagement(canEngage);
-      if (!canEngage) {
-        toast.error("This item no longer accepts likes.");
-        return;
-      }
       const nextLiked = await toggleMarketplaceListingLike(
         listingId,
         currentUser.id,
         isLiked,
       );
       setIsLiked(nextLiked);
-      await refreshEngagement();
+      setLikeCount((count) => Math.max(0, count + (nextLiked ? 1 : -1)));
     } catch (error) {
       toast.error(
         error instanceof Error ? error.message : "Could not update listing like.",
@@ -338,12 +331,6 @@ export function MarketplaceListingEngagement({
     setIsSending(true);
     const uploadedImagePaths: string[] = [];
     try {
-      const canEngage = await canEngageWithMarketplaceListing(listingId);
-      setServerAllowsEngagement(canEngage);
-      if (!canEngage) {
-        throw new Error("This item no longer accepts comments.");
-      }
-
       let imageUrls: string[] = [];
       if (imageFiles.length > 0) {
         const uploadResults = await Promise.allSettled(
@@ -489,14 +476,10 @@ export function MarketplaceListingEngagement({
           onClick={() => void handleLike()}
           className="rounded-xl"
         >
-          {isLiking ? (
-            <Loader2 aria-hidden="true" className="size-4 animate-spin" />
-          ) : (
-            <Heart
-              aria-hidden="true"
-              className={`size-4 ${isLiked ? "fill-current text-rose-500" : ""}`}
-            />
-          )}
+          <Heart
+            aria-hidden="true"
+            className={`size-4 ${isLiked ? "fill-current text-rose-500" : ""}`}
+          />
           {/* {isLiked ? "Liked" : "Like"} */}
           Like<span className="tabular-nums">{likeCount}</span>
         </Button>

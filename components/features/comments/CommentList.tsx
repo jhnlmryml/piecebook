@@ -21,7 +21,8 @@ import {
 import { MessageGroup } from "@/components/ui/message";
 import { LocalDateTime } from "@/components/shared/LocalDateTime";
 import { getInitials } from "@/lib/get-initials";
-import { areCommentsGrouped, type CommentTimelineEntry } from "@/lib/comment-utils";
+import { isSupabasePublicImage } from "@/lib/is-supabase-public-image";
+import { type CommentTimelineEntry } from "@/lib/comment-utils";
 import type { UserProfile } from "@/types/user-profile";
 import { useLongPressMenu } from "@/components/features/messaging/useLongPressMenu";
 
@@ -130,7 +131,7 @@ export function CommentList<TComment extends CommentListItem>({
   );
 
   return (
-    <MessageGroup role="list" className="gap-0">
+    <MessageGroup role="list" className="gap-0 select-none">
       {comments.map((comment, index) => {
         const author = usersById.get(comment.user_id);
         const isOwnComment = comment.user_id === currentUserId;
@@ -138,7 +139,6 @@ export function CommentList<TComment extends CommentListItem>({
         const isFirstInTimeGroup =
           index === 0 ||
           !areCommentsInSameTimeGroup(comments[index - 1], comment);
-        // const isFirstInGroup = !areCommentsGrouped(comments[index - 1], comment);
         const canDeleteComment = isOwnComment && canDelete && onDelete;
 
         return (
@@ -211,7 +211,7 @@ export function CommentList<TComment extends CommentListItem>({
                                 alt={`Image ${imageIndex + 1} attached to ${imageDescription}`}
                                 width={560}
                                 height={420}
-                                unoptimized
+                                unoptimized={!isSupabasePublicImage(imageUrl)}
                                 className="mt-2 max-h-72 w-auto max-w-full rounded-xl object-contain"
                               />
                             ))}

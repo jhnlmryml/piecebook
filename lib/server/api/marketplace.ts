@@ -23,6 +23,7 @@ import {
   requireUuid,
 } from "@/lib/server/api-utils";
 import { z } from "zod";
+import { getSellerStripeAccountState, getSupabaseAdminClient } from "@/lib/server/stripe-marketplace";
 
 type Method = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 type ListingRow = Tables<"marketplace_listing">;
@@ -35,6 +36,24 @@ type MarketplaceListingCreateValues = Omit<
   z.infer<typeof marketplaceListingCreatePayloadSchema>,
   "photos"
 >;
+
+type SellerStripeState = Awaited<ReturnType<typeof getSellerStripeAccountState>>;
+type VerifiedSeller = Omit<SellerStripeState, "profile"> & {
+  profile: NonNullable<SellerStripeState["profile"]>;
+};
+
+async function requireEligibleSeller(sellerId: string, fallbackEmail?: string | null): Promise<VerifiedSeller> {
+  const seller = await getSellerStripeAccountState(sellerId, fallbackEmail);
+  if (!seller.profile) notFound("The seller profile could not be found.");
+  if (!seller.paymentEligible) {
+    throw new ApiError(
+      409,
+      "STRIPE_CONNECT_REQUIRED",
+      "Connect Stripe and finish onboarding before creating or publishing listings.",
+    );
+  }
+  return seller as VerifiedSeller;
+}
 
 const uuidSchema = z.string().uuid();
 const listingCommentSchema = commentPayloadSchema.extend({
@@ -146,14 +165,27 @@ function parseListingForm(formData: FormData) {
 async function insertListing(
   input: MarketplaceListingCreateValues,
   photos: string[],
+  verifiedSeller?: VerifiedSeller,
 ) {
+  const seller = verifiedSeller ?? await requireEligibleSeller(input.sellerId, input.sellerEmail);
+  const supabase = getSupabaseClient();
+  let sellerEmail = input.sellerEmail?.trim().toLowerCase() || null;
+  if (!sellerEmail) {
+    const { data: sellerProfile, error: sellerProfileError } = await supabase
+      .from("users")
+      .select("email")
+      .eq("id", input.sellerId)
+      .maybeSingle();
+    if (sellerProfileError) databaseError("Could not load the seller email", sellerProfileError);
+    sellerEmail = sellerProfile?.email?.trim().toLowerCase() || seller.sellerEmail;
+  }
   const categoryDetails = Object.fromEntries(
     Object.entries(input.categoryDetails).filter(([, value]) => value.trim()),
   );
   const row: TablesInsert<"marketplace_listing"> = {
     seller_id: input.sellerId,
-    seller_name: input.sellerName,
-    seller_email: input.sellerEmail ?? null,
+    seller_name: seller.profile.full_name?.trim() || input.sellerName,
+    seller_email: sellerEmail,
     title: input.title,
     price: input.price,
     quantity: input.quantity,
@@ -167,7 +199,7 @@ async function insertListing(
     material: categoryDetails.Material ?? null,
     status: "available",
   };
-  const { data, error } = await getSupabaseClient()
+  const { data, error } = await supabase
     .from("marketplace_listing")
     .insert(row)
     .select(marketplaceListingPublicColumns)
@@ -179,6 +211,7 @@ async function insertListing(
 async function createListingFromFormData(request: Request) {
   const formData = await readFormData(request, 51 * 1024 * 1024);
   const { input, photoFiles } = parseListingForm(formData);
+  const verifiedSeller = await requireEligibleSeller(input.sellerId, input.sellerEmail);
   const supabase = getSupabaseClient();
   const bucket = supabase.storage.from(MARKETPLACE_IMAGE_BUCKET);
   const uploadedPaths: string[] = [];
@@ -196,7 +229,7 @@ async function createListingFromFormData(request: Request) {
       uploadedPaths.push(path);
       photos.push(bucket.getPublicUrl(path).data.publicUrl);
     }
-    return await insertListing(input, photos);
+    return await insertListing(input, photos, verifiedSeller);
   } catch (error) {
     if (uploadedPaths.length > 0) {
       try {
@@ -260,10 +293,22 @@ async function updateListing(request: Request, listingId: string) {
   if (body.id !== listingId) {
     throw new ApiError(422, "VALIDATION_ERROR", "The listing ID does not match the request path.");
   }
+  const supabase = getSupabaseClient();
+  const { data: ownedListing, error: ownedListingError } = await supabase
+    .from("marketplace_listing")
+    .select("id,status")
+    .eq("id", listingId)
+    .eq("seller_id", body.sellerId)
+    .maybeSingle();
+  if (ownedListingError) databaseError("Could not verify marketplace listing ownership", ownedListingError);
+  if (!ownedListing) notFound("The listing was not found or does not belong to this profile.");
+  if (body.status === "available" && body.quantity > 0) {
+    await requireEligibleSeller(body.sellerId);
+  }
   const categoryDetails = Object.fromEntries(
     Object.entries(body.categoryDetails).filter(([, value]) => value.trim()),
   );
-  const { data, error } = await getSupabaseClient()
+  const { data, error } = await supabase
     .from("marketplace_listing")
     .update({
       title: body.title,
@@ -280,10 +325,23 @@ async function updateListing(request: Request, listingId: string) {
     })
     .eq("id", listingId)
     .eq("seller_id", body.sellerId)
+    .neq("status", "pending")
     .select(marketplaceListingPublicColumns)
     .maybeSingle();
   if (error) databaseError("Could not update marketplace listing", error);
-  if (!data) notFound("The listing was not found or does not belong to this profile.");
+  if (!data) {
+    const { data: currentListing, error: currentListingError } = await getSupabaseClient()
+      .from("marketplace_listing")
+      .select("status")
+      .eq("id", listingId)
+      .eq("seller_id", body.sellerId)
+      .maybeSingle();
+    if (currentListingError) databaseError("Could not verify marketplace listing state", currentListingError);
+    if (currentListing?.status === "pending") {
+      throw new ApiError(409, "CHECKOUT_PENDING", "This listing is held while a Stripe Checkout session is open.");
+    }
+    notFound("The listing was not found or does not belong to this profile.");
+  }
   return json(data);
 }
 
@@ -292,22 +350,38 @@ async function deleteListing(request: Request, listingId: string) {
   const supabase = getSupabaseClient();
   const { data: listing, error: loadError } = await supabase
     .from("marketplace_listing")
-    .select("id,photos")
+    .select("id,photos,status")
     .eq("id", listingId)
     .eq("seller_id", sellerId)
     .maybeSingle();
   if (loadError) databaseError("Could not load marketplace listing", loadError);
   if (!listing) notFound("The listing was not found or does not belong to this profile.");
+  if (listing.status === "pending") {
+    throw new ApiError(409, "CHECKOUT_PENDING", "This listing is held while a Stripe Checkout session is open.");
+  }
 
   const { data: deleted, error } = await supabase
     .from("marketplace_listing")
     .delete()
     .eq("id", listingId)
     .eq("seller_id", sellerId)
+    .neq("status", "pending")
     .select("id")
     .maybeSingle();
   if (error) databaseError("Could not delete marketplace listing", error);
-  if (!deleted) notFound("The listing was not found or does not belong to this profile.");
+  if (!deleted) {
+    const { data: currentListing, error: currentListingError } = await supabase
+      .from("marketplace_listing")
+      .select("status")
+      .eq("id", listingId)
+      .eq("seller_id", sellerId)
+      .maybeSingle();
+    if (currentListingError) databaseError("Could not verify marketplace listing state", currentListingError);
+    if (currentListing?.status === "pending") {
+      throw new ApiError(409, "CHECKOUT_PENDING", "This listing is held while a Stripe Checkout session is open.");
+    }
+    notFound("The listing was not found or does not belong to this profile.");
+  }
 
   const photoPaths = (listing.photos ?? [])
     .map((url) => getListingImagePath(url, sellerId))
@@ -556,9 +630,17 @@ async function orderRecords(request: Request) {
   const url = new URL(request.url);
   const profileId = requireUuid(url.searchParams.get("profileId"), "profileId");
   const role = parseQuery(url.searchParams.get("role"), z.enum(["buyer", "seller"]));
+  const admin = getSupabaseAdminClient();
+  const { data: profile, error: profileError } = await admin
+    .from("users")
+    .select("id")
+    .eq("id", profileId)
+    .maybeSingle();
+  if (profileError) databaseError("Could not verify marketplace order profile", profileError);
+  if (!profile) notFound("The marketplace profile could not be found.");
   const rows: OrderRow[] = [];
   for (let offset = 0; ; offset += 500) {
-    let query = getSupabaseClient()
+    let query = admin
       .from("marketplace_orders")
       .select("*")
       .order("created_at", { ascending: false })
@@ -575,14 +657,29 @@ async function orderRecords(request: Request) {
   return json(rows);
 }
 
-async function orderRecord(orderId: string) {
-  const { data, error } = await getSupabaseClient()
+async function orderRecord(request: Request, orderId: string) {
+  const profileId = requireUuid(new URL(request.url).searchParams.get("profileId"), "profileId");
+  const { data, error } = await getSupabaseAdminClient()
     .from("marketplace_orders")
     .select("*")
     .eq("id", orderId)
     .maybeSingle();
   if (error) databaseError("Could not load marketplace order", error);
-  return data ? json(data) : notFound("The requested order was not found.");
+  if (!data || (data.buyer_id !== profileId && data.seller_id !== profileId)) {
+    notFound("The order was not found for this profile.");
+  }
+  return json(data);
+}
+
+async function publicOrderRecord(orderId: string) {
+  const { data, error } = await getSupabaseAdminClient()
+    .from("marketplace_orders")
+    .select("id,listing_id,source_listing_id,seller_name,seller_image,listing_title,listing_previous_price,listing_category,listing_condition,listing_description,listing_location,listing_photos,listing_category_details,listing_color,listing_material,unit_price,created_at")
+    .eq("id", orderId)
+    .in("payment_status", ["legacy", "paid"])
+    .maybeSingle();
+  if (error) databaseError("Could not load sold marketplace item", error);
+  return data ? json(data) : notFound("The sold item was not found.");
 }
 
 async function archivedEngagement(listingId: string) {
@@ -633,8 +730,11 @@ export async function handleMarketplaceApi(
   if (path.length === 2 && path[1] === "orders" && method === "GET") {
     return orderRecords(request);
   }
+  if (path.length === 4 && path[1] === "orders" && path[3] === "public" && method === "GET") {
+    return publicOrderRecord(parseQuery(path[2], uuidSchema));
+  }
   if (path.length === 3 && path[1] === "orders" && method === "GET") {
-    return orderRecord(parseQuery(path[2], uuidSchema));
+    return orderRecord(request, parseQuery(path[2], uuidSchema));
   }
   if (path[1] === "listings" && path.length === 2) {
     if (method === "GET") return listListings();
